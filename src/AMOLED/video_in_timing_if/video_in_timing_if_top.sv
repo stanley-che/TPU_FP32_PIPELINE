@@ -110,15 +110,12 @@ module video_in_timing_if_top #(
   ) u_se (
     .clk(clk),
     .rst(rst),
-
     .vsync_i(vsync_i),
     .hsync_i(hsync_i),
     .de_i   (de_i),
-
     .vsync  (vsync),
     .hsync  (hsync),
     .de     (de),
-
     .vs_rise(vs_rise),
     .vs_fall(vs_fall),
     .hs_rise(hs_rise),
@@ -165,21 +162,16 @@ module video_in_timing_if_top #(
   ) u_xy (
     .clk(clk),
     .rst(rst),
-
     .pix_valid(pix_valid),
     .de_rise  (de_rise),
     .de_fall  (de_fall),
     .vs_rise  (vs_rise),
-
     .in_frame_i(in_frame),
-
     .x(x),
     .y(y),
-
     .frame_start_p(frame_start_p),
     .line_start_p (line_start_p),
     .line_end_p   (line_end_p),
-
     .x_at_last (x_at_last),
     .y_at_last (y_at_last),
     .x_overflow(x_overflow),
