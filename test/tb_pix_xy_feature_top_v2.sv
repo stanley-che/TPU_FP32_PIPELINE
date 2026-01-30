@@ -84,7 +84,7 @@ module tb_pix_xy_feature_top_v2;
     .TILE_W(TILE_W), .TILE_H(TILE_H),
     .YPIX_W(YPIX_W),
     .FEAT_W(FEAT_W), .FEAT_DIM(FEAT_DIM),
-    .MATCH_MODE_BUFFERED(1'b0),.USE_EOL(1'b0),
+    .MATCH_MODE_BUFFERED(1'b1),.USE_EOL(1'b0),
   .USE_EOF(1'b0)
   ) dut (
     .clk(clk), .rst(rst), .en(en),
@@ -170,29 +170,11 @@ module tb_pix_xy_feature_top_v2;
 
       // If stuck too long, print a snapshot (do not immediately fatal; you can change to $fatal)
       if (prdy_low_run == 2000) begin
-        $display("[TB][DUMP] x=%0d y=%0d x_mod=%0d y_mod=%0d tile_i=%0d tile_j=%0d first=%0d last=%0d in_roi=%0d",
-         dut.x, dut.y, dut.x_mod, dut.y_mod, dut.tile_i_dbg, dut.tile_j_dbg,
-         dut.tile_first, dut.tile_last, dut.in_roi);
-
-$display("[TB][DUMP] stats_err=%0d err_code=%0d sof_mid=%0d eol_mis=%0d frame_cnt=%0d line_cnt=%0d",
-         dut.stats_tile_err, dut.stats_err_code, dut.err_sof_midframe, dut.err_eol_mismatch,
-         dut.frame_cnt, dut.line_cnt);
-
-// Stage A handshake (hierarchical)
-$display("[TB][DUMP] A: out_valid=%0d out_ready=%0d pix_ready=%0d",
-         dut.u_stats_edge.out_valid, dut.u_stats_edge.out_ready, dut.u_stats_edge.pix_ready);
-
-        $display("[TB][DUMP] fifo_valid=%0d sent_v3=%0d sent_v4=%0d pop_entry=%0d push_entry=%0d",
-         dut.fifo_valid, dut.sent_v3, dut.sent_v4, dut.pop_entry, dut.push_entry);
-$display("[TB][DUMP] v3_valid=%0d v3_ready=%0d take_v3=%0d | v4_valid=%0d v4_ready=%0d take_v4=%0d",
-         dut.v3_valid, dut.v3_ready, dut.take_v3,
-         dut.v4_valid, dut.v4_ready, dut.take_v4);
-$display("[TB][DUMP] v_bundle_valid=%0d v_bundle_ready=%0d",
-         dut.v_bundle_valid, dut.v_bundle_ready);
 
         $display("[TB][WARN] pix_ready stuck LOW for 2000 cycles while pix_valid=1 (likely deadlock).");
         $display("[TB][WARN] got_tiles=%0d join_ok=%0d mismatch=%0d drop=%0d",
                  got_tiles, cnt_join_ok, cnt_mismatch, cnt_drop);
+                
       end
     end
   end
@@ -305,10 +287,10 @@ endtask
     join_none
 
     // 2) Drive frame with timeout so TB never hangs here
-    drive_frame_with_timeout(200000);
+    drive_frame_with_timeout(200);
 
     // 3) Drain tiles (always force ready=1 here)
-    drain_until_done(EXP_TILES, 200000);
+    drain_until_done(EXP_TILES, 200);
 
     $display("[TB] done: got_tiles=%0d/%0d join_ok=%0d mismatch=%0d drop=%0d",
              got_tiles, EXP_TILES, cnt_join_ok, cnt_mismatch, cnt_drop);

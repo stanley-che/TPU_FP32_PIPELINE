@@ -333,7 +333,8 @@ module feature_pack_and_valid #(
             f4_r <= '0; f5_r <= '0; f6_r <= '0; f7_r <= '0;
 
             // pack {feat7..feat0}
-            vec_r <= { f7_r, f6_r, f5_r, f4_r, f3n, f2n, f1n, f0n };
+            vec_r <= { {4{ {FEAT_W{1'b0}} }}, f3n, f2n, f1n, f0n };
+
 
             hold_valid <= 1'b1;
 
@@ -373,7 +374,8 @@ module feature_pack_and_valid #(
             f0_r <= f0n; f1_r <= f1n; f2_r <= f2n; f3_r <= f3n;
             f4_r <= '0; f5_r <= '0; f6_r <= '0; f7_r <= '0;
 
-            vec_r <= { f7_r, f6_r, f5_r, f4_r, f3n, f2n, f1n, f0n };
+            vec_r <= { {4{ {FEAT_W{1'b0}} }}, f3n, f2n, f1n, f0n };
+
 
             hold_valid <= 1'b1;
 

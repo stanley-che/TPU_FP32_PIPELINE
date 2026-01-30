@@ -191,68 +191,103 @@ module pix_xy_feature_top #(
   logic [15:0]          frame_id_o_s;
 
   logic [$clog2(TILE_W*TILE_H+1)-1:0] stats_pix_cnt_o;
+ 
     // ============================================================
-  // 1-entry FIFO with split-consume (v3/v4 can be accepted on different cycles)
+  // 2-entry FIFO (burst=2) for paired bundle (atomic consume)
+  //  - Stage A already pairs stats+edge in the same out_valid beat
+  //  - Present v3/v4 together; pop only when BOTH accepted same cycle
   // ============================================================
-  logic fifo_valid;
-  logic sent_v3, sent_v4;
 
-  // packer side valids: only assert if that channel not yet accepted
-  wire v3_valid = fifo_valid & ~sent_v3;
-  wire v4_valid = fifo_valid & ~sent_v4;
+  localparam int unsigned FIFO_DEPTH = 2;
 
-  // handshakes per channel
-  wire take_v3 = v3_valid & v3_ready;
-  wire take_v4 = v4_valid & v4_ready;
+  logic [$clog2(FIFO_DEPTH):0] fifo_cnt; // can hold 0..2
+  logic [$clog2(FIFO_DEPTH)-1:0] rd_ptr, wr_ptr;
 
-  // pop when both channels have been accepted (either previously or this cycle)
-  wire pop_entry = fifo_valid & ((sent_v3 | take_v3) & (sent_v4 | take_v4));
+  wire fifo_full  = (fifo_cnt == FIFO_DEPTH);
+  wire fifo_empty = (fifo_cnt == 0);
 
-  // upstream ready: can accept new bundle only when entry is empty OR popping this cycle
-  assign v_bundle_ready = (~fifo_valid) | pop_entry;
-  wire   push_entry     = v_bundle_valid & v_bundle_ready;
+  // Upstream (Stage A) handshake
+  assign v_bundle_ready = ~fifo_full;
+  wire push = v_bundle_valid & v_bundle_ready;
 
+  // ------------------------------------------------------------
+  // FIFO storage
+  // ------------------------------------------------------------
+  logic [SUM_W-1:0]  sumY_mem     [FIFO_DEPTH];
+  logic [YPIX_W-1:0] minY_mem     [FIFO_DEPTH];
+  logic [YPIX_W-1:0] maxY_mem     [FIFO_DEPTH];
+  logic [EDGE_W-1:0] edge_sum_mem [FIFO_DEPTH];
+  logic [15:0]       tile_x_mem   [FIFO_DEPTH];
+  logic [15:0]       tile_y_mem   [FIFO_DEPTH];
+
+  // Read current entry
+  wire [SUM_W-1:0]  sumY_q     = sumY_mem[rd_ptr];
+  wire [YPIX_W-1:0] minY_q     = minY_mem[rd_ptr];
+  wire [YPIX_W-1:0] maxY_q     = maxY_mem[rd_ptr];
+  wire [EDGE_W-1:0] edge_sum_q = edge_sum_mem[rd_ptr];
+  wire [15:0]       tile_x_q   = tile_x_mem[rd_ptr];
+  wire [15:0]       tile_y_q   = tile_y_mem[rd_ptr];
+
+  // ------------------------------------------------------------
+  // Downstream (packer) handshake: atomic pair
+  // ------------------------------------------------------------
+  wire v_pair_valid = ~fifo_empty;
+
+  // v3/v4 BOTH valid together (atomic)
+  wire v3_valid = v_pair_valid;
+  wire v4_valid = v_pair_valid;
+
+  // Pop only if BOTH channels accepted in same cycle
+  wire pop = v_pair_valid & v3_ready & v4_ready;
+
+  // ------------------------------------------------------------
+  // FIFO update
+  // ------------------------------------------------------------
   always_ff @(posedge clk) begin
     if (rst) begin
-      fifo_valid <= 1'b0;
-      sent_v3    <= 1'b0;
-      sent_v4    <= 1'b0;
-
-      sumY_q     <= '0;
-      minY_q     <= '0;
-      maxY_q     <= '0;
-      edge_sum_q <= '0;
-      tile_x_q   <= '0;
-      tile_y_q   <= '0;
+      fifo_cnt <= '0;
+      rd_ptr   <= '0;
+      wr_ptr   <= '0;
     end else begin
-      // default: keep flags unless handshake happens
-      if (take_v3) sent_v3 <= 1'b1;
-      if (take_v4) sent_v4 <= 1'b1;
+      case ({push, pop})
+        2'b10: begin // push only
+          sumY_mem[wr_ptr]     <= sumY;
+          minY_mem[wr_ptr]     <= minY;
+          maxY_mem[wr_ptr]     <= maxY;
+          edge_sum_mem[wr_ptr] <= edge_sum;
+          tile_x_mem[wr_ptr]   <= tile_x_o_s;
+          tile_y_mem[wr_ptr]   <= tile_y_o_s;
 
-      // pop clears the entry (end of life)
-      if (pop_entry) begin
-        fifo_valid <= 1'b0;
-        sent_v3    <= 1'b0;
-        sent_v4    <= 1'b0;
-      end
+          wr_ptr   <= wr_ptr + 1'b1;
+          fifo_cnt <= fifo_cnt + 1'b1;
+        end
 
-      // push loads a new entry (allowed only when empty OR pop same cycle)
-      if (push_entry) begin
-        fifo_valid <= 1'b1;
-        sent_v3    <= 1'b0;
-        sent_v4    <= 1'b0;
+        2'b01: begin // pop only
+          rd_ptr   <= rd_ptr + 1'b1;
+          fifo_cnt <= fifo_cnt - 1'b1;
+        end
 
-        sumY_q     <= sumY;
-        minY_q     <= minY;
-        maxY_q     <= maxY;
-        edge_sum_q <= edge_sum;
+        2'b11: begin // pop + push same cycle (count unchanged)
+          // pop (advance rd)
+          rd_ptr <= rd_ptr + 1'b1;
 
-        tile_x_q   <= tile_x_o_s;
-        tile_y_q   <= tile_y_o_s;
-      end
+          // push into wr slot
+          sumY_mem[wr_ptr]     <= sumY;
+          minY_mem[wr_ptr]     <= minY;
+          maxY_mem[wr_ptr]     <= maxY;
+          edge_sum_mem[wr_ptr] <= edge_sum;
+          tile_x_mem[wr_ptr]   <= tile_x_o_s;
+          tile_y_mem[wr_ptr]   <= tile_y_o_s;
+
+          wr_ptr <= wr_ptr + 1'b1;
+        end
+
+        default: begin
+          // 00: nothing
+        end
+      endcase
     end
   end
-
 
 
   // ============================================================
@@ -271,9 +306,9 @@ module pix_xy_feature_top #(
     .YPIX_W(YPIX_W),
 
     .USE_SOF(1'b0),
-.USE_EOL(1'b0),
-.USE_EOF(1'b0),
-.ADVANCE_ON_VALID_ONLY(1'b1),
+    .USE_EOL(1'b0),
+    .USE_EOF(1'b0),
+    .ADVANCE_ON_VALID_ONLY(1'b1),
 
     .SAT_AT_MAX(SAT_AT_MAX),
 
@@ -364,10 +399,7 @@ module pix_xy_feature_top #(
   // ============================================================
   // FIFO payload regs + packer handshake wires (MUST declare)
   // ============================================================
-  logic [SUM_W-1:0]  sumY_q;
-  logic [YPIX_W-1:0] minY_q, maxY_q;
-  logic [EDGE_W-1:0] edge_sum_q;
-  logic [15:0]       tile_x_q, tile_y_q;
+
 
   logic v3_ready, v4_ready;
 

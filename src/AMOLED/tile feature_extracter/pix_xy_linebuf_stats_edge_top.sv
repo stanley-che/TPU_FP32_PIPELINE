@@ -13,7 +13,8 @@
 `define PIX_XY_LINEBUF_STATS_EDGE_TOP_SV
 
 `include "./src/AMOLED/tile feature_extracter/pixel_xy_linebuf_1line_top.sv"
-`include "./src/AMOLED/tile feature_extracter/tile_stats_edge_4x4.sv"
+`include "./src/AMOLED/tile feature_extracter/tile_stats_edge_raster_4x4.sv"
+
 
 `timescale 1ns/1ps
 `default_nettype none
@@ -241,94 +242,68 @@ module pix_xy_linebuf_stats_edge_top #(
   logic [15:0] tile_x_idx, tile_y_idx, frame_id, y_meta;
   logic        pix_in_tile_valid;
   logic        tile_start;
+assign tile_x_idx = {{(16-X_W){1'b0}}, tile_j};    // tile_j width = X_W
+assign tile_y_idx = {{(16-Y_W){1'b0}}, tile_i};    // tile_i width = Y_W
+assign frame_id   = frame_cnt[15:0];               // frame_cnt is 32 bits
+assign y_meta     = {{(16-Y_W){1'b0}}, y};         // y width = Y_W
 
-  assign tile_x_idx = {{(16-6){1'b0}}, tile_j};
-  assign tile_y_idx = {{(16-6){1'b0}}, tile_i};
-  assign frame_id = {{(16-6){1'b0}}, frame_cnt};
-  assign y_meta = {{(16-6){1'b0}}, y};  
   // 2) or pass something else (e.g., mean of tile, luma tag, etc.)
 
   //assign pix_in_tile_valid = in_roi;     // common choice: only ROI pixels count
   assign pix_in_tile_valid = 1'b1;  
   assign tile_start        = tile_first; // first pixel of tile
 
+    // ============================================================
+  // Stage B (RASTER): per-tile stats+edge that works with raster scan
   // ============================================================
-  // Stage B: tile_stats_edge_4x4
-  // ============================================================
-  tile_stats_edge_4x4 #(
+  tile_stats_edge_raster_4x4 #(
     .Y_W(YPIX_W),
     .TILE_W(TILE_W),
     .TILE_H(TILE_H),
+    .TILES_X(TILES_X),
 
-    .SUPPORT_PIX_VALID_STATS(SUPPORT_PIX_VALID_STATS),
-    .DO_SUMSQ_STATS(DO_SUMSQ_STATS),
-    .ASSERT_ON_STATS(ASSERT_ON_STATS),
-
-    .SUPPORT_PIX_VALID_EDGE(SUPPORT_PIX_VALID_EDGE),
-    .SUPPORT_TILE_START_EDGE(SUPPORT_TILE_START_EDGE),
-    .ASSERT_ON_EDGE(ASSERT_ON_EDGE),
-
-    .EDGE_MODE(EDGE_MODE),
-    .EDGE_THR(EDGE_THR),
-
-    .EDGE_W(EDGE_W),
-    .CNT_W(CNT_W),
-
-    .TILE_PIXELS(TILE_PIXELS),
-    .SUM_MAX(SUM_MAX),
     .SUM_W(SUM_W),
-    .SUMSQ_MAX(SUMSQ_MAX),
-    .SUMSQ_W(SUMSQ_W)
-  ) u_stats_edge (
+    .EDGE_W(EDGE_W),
+
+    .OUT_FIFO_DEPTH(2)
+  ) u_stats_edge_raster (
     .clk(clk),
     .rst(rst),
+    .en(en),
 
-    // upstream pixel stream (v2)
     .v2_valid(v2_valid),
     .v2_ready(v2_ready),
 
     .y_cur(y_cur),
     .y_left(y_left),
     .y_up(y_up),
-    .x_mod(x_mod[$clog2(TILE_W)-1:0]),
-    .y_mod(y_mod[$clog2(TILE_H)-1:0]),
 
-    .tile_last(tile_last),
-    .tile_start(tile_start),
-    .pix_in_tile_valid(pix_in_tile_valid),
-
-    // meta
     .tile_x_idx(tile_x_idx),
     .tile_y_idx(tile_y_idx),
-    .frame_id(frame_id),
-    .y_meta(y_meta),
+    .x_mod(x_mod),
+    .y_mod(y_mod),
 
-    // downstream tile bundle
+    .frame_id(frame_id),
+
     .out_valid(out_valid),
     .out_ready(out_ready),
 
-    // stats outputs
     .sumY(sumY),
     .minY(minY),
     .maxY(maxY),
-    .meanY(meanY),
-    .rangeY(rangeY),
 
-    .stats_tile_err(stats_tile_err),
-    .stats_err_code(stats_err_code),
-    .stats_pix_cnt_o(stats_pix_cnt_o),
+    .edge_sum(edge_sum),
 
-    .y_meta_o(y_meta_o),
     .tile_x_o(tile_x_o),
     .tile_y_o(tile_y_o),
-    .frame_id_o(frame_id_o),
-
-    // edge outputs
-    .edge_sum(edge_sum),
-    .edge_max(edge_max),
-    .edge_cnt(edge_cnt),
-    .edge_mean(edge_mean)
+    .frame_id_o(frame_id_o)
   );
+
+  // edge_max/edge_cnt/edge_mean 你如果暫時不用，可以先 tie-off
+  assign edge_max  = '0;
+  assign edge_cnt  = '0;
+  assign edge_mean = '0;
+
 
 endmodule
 
