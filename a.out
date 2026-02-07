@@ -1,0 +1,3946 @@
+
+
+
+// pix_xy_feature_top.sv
+// ------------------------------------------------------------
+// Integrates:
+//   A) pix_xy_linebuf_stats_edge_top : pixel->tile stats+edge bundle (out_valid/out_ready)
+//   B) feature_pack_and_valid        : stats+edge -> feature vector (feat_valid/feat_ready)
+//
+// Fix:
+// - Insert 1-deep skid FIFO between A and B to break timing/backpressure coupling
+// - Packer consumes FIFO-Q payloads (NOT raw bundle wires)
+// ------------------------------------------------------------
+
+
+
+
+// pix_xy_linebuf_stats_edge_top.sv
+// ------------------------------------------------------------
+// Integrates:
+//   1) pix_xy_linebuf_top      : pixel_xy_counter + 1-line Y buffer
+//   2) tile_stats_edge_4x4     : 4x4 tile stats + edge energy, joined bundle
+//
+// Stream:
+//   (pix_valid/y_in/sof) -> linebuf -> (y_cur,y_left,y_up,x_mod,y_mod,tile_first,tile_last,meta)
+//                         -> tile_stats_edge_4x4 -> (sum/min/max/mean/range + edge metrics) ready/valid
+// ------------------------------------------------------------
+
+
+
+
+// pix_xy_linebuf_top.sv
+// ------------------------------------------------------------
+// Integrates:
+//   1) pixel_xy_counter  : generates x/y + tile flags with ready/valid
+//   2) linebuf_y_1line   : 1-line Y buffer (y_cur/y_left/y_up) with backpressure
+//
+// Data flow:
+//   (pix_valid, sof/eol/eof) ---> pixel_xy_counter ---> (v1_valid,x,y) ---> linebuf ---> (out_valid, y_cur/y_left/y_up)
+//                                         ^                                      |
+//                                         |                                      v
+//                                      pix_ready <--- backpressure <--- out_ready
+// ------------------------------------------------------------
+
+
+
+// pixel_xy_counter.sv — redesigned (clean skid-buffer, stall-safe) + FIX pop+push same-cycle
+
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module pixel_xy_counter #(
+  parameter int unsigned X_W      = 11,
+  parameter int unsigned Y_W      = 10,
+  parameter int unsigned ACTIVE_W = 1280,
+  parameter int unsigned ACTIVE_H = 720,
+
+  parameter int unsigned TILE_SHIFT = 2,     // 4x4 => shift=2
+  parameter int unsigned TILES_X    = (ACTIVE_W >> TILE_SHIFT),
+  parameter int unsigned TILES_Y    = (ACTIVE_H >> TILE_SHIFT),
+
+  parameter bit          USE_SOF    = 1'b1,
+  parameter bit          USE_EOL    = 1'b0,
+  parameter bit          USE_EOF    = 1'b0,
+  parameter bit          SAT_AT_MAX = 1'b0,
+
+  // if 1: advance coordinate only when output is consumed (fire_out)
+  // if 0: advance on every accepted input (fire_in)
+  parameter bit          ADVANCE_ON_VALID_ONLY = 1'b1,
+
+  parameter bit          ROI_EN_DEFAULT = 1'b0,
+  parameter int unsigned ROI_X0_DEFAULT = 0,
+  parameter int unsigned ROI_Y0_DEFAULT = 0,
+  parameter int unsigned ROI_X1_DEFAULT = ACTIVE_W-1,
+  parameter int unsigned ROI_Y1_DEFAULT = ACTIVE_H-1,
+
+  parameter bit          DBG_COUNTERS_EN = 1'b1
+)(
+  input  logic                  clk,
+  input  logic                  rst,
+  input  logic                  en,
+
+  input  logic                  pix_valid,
+  output logic                  pix_ready,
+
+  input  logic                  sof,
+  input  logic                  eol,
+  input  logic                  eof,
+
+  output logic                  v1_valid,
+  input  logic                  v1_ready,
+  output logic [X_W-1:0]        x,
+  output logic [Y_W-1:0]        y,
+
+  output logic [X_W-1:0]        tile_j,
+  output logic [Y_W-1:0]        tile_i,
+  output logic [1:0]            x_mod,
+  output logic [1:0]            y_mod,
+
+  output logic                  tile_first,
+  output logic                  tile_last,
+  output logic                  tile_x_last,
+  output logic                  tile_y_last,
+
+  output logic                  x_last,
+  output logic                  y_last,
+  output logic                  line_start,
+  output logic                  line_last,
+  output logic                  frame_start,
+  output logic                  frame_last,
+
+  output logic [$clog2(TILES_X*TILES_Y)-1:0] tile_idx,
+
+  output logic                  in_roi,
+
+  output logic                  err_sof_midframe,
+  output logic                  err_eol_mismatch,
+  output logic [31:0]           frame_cnt,
+  output logic [31:0]           line_cnt
+);
+
+  // -----------------------------------------
+  // constants / helpers
+  // -----------------------------------------
+  localparam int unsigned X_LAST_U = (ACTIVE_W == 0) ? 0 : (ACTIVE_W - 1);
+  localparam int unsigned Y_LAST_U = (ACTIVE_H == 0) ? 0 : (ACTIVE_H - 1);
+
+  function automatic logic is_x_last(input logic [X_W-1:0] xv);
+    begin is_x_last = (xv == X_LAST_U[X_W-1:0]); end
+  endfunction
+
+  function automatic logic is_y_last(input logic [Y_W-1:0] yv);
+    begin is_y_last = (yv == Y_LAST_U[Y_W-1:0]); end
+  endfunction
+
+  localparam int unsigned ROI_X0 = ROI_X0_DEFAULT;
+  localparam int unsigned ROI_Y0 = ROI_Y0_DEFAULT;
+  localparam int unsigned ROI_X1 = ROI_X1_DEFAULT;
+  localparam int unsigned ROI_Y1 = ROI_Y1_DEFAULT;
+
+  // -----------------------------------------
+  // running coordinate: "next coordinate to output"
+  // -----------------------------------------
+  logic [X_W-1:0] x_r;
+  logic [Y_W-1:0] y_r;
+
+  // -----------------------------------------
+  // 1-entry output buffer (skid)
+  // -----------------------------------------
+  logic [X_W-1:0] x_q;
+  logic [Y_W-1:0] y_q;
+  logic sof_q, eol_q, eof_q;
+
+  // -----------------------------------------
+  // handshakes
+  // -----------------------------------------
+  wire fire_out = v1_valid && v1_ready;
+
+  // buffer can accept new input if empty OR it will be popped this cycle
+  wire buf_can_take = en && (!v1_valid || fire_out);
+
+  assign pix_ready = buf_can_take;         // classic 1-stage skid
+  wire fire_in = pix_valid && pix_ready;   // accepted input beat
+
+  // -----------------------------------------
+  // combinational "advance one step" from current x_r/y_r (for same-cycle pop+push fix)
+  // -----------------------------------------
+  logic [X_W-1:0] x_r_adv;
+  logic [Y_W-1:0] y_r_adv;
+
+  always_comb begin
+    x_r_adv = x_r;
+    y_r_adv = y_r;
+
+    if (!is_x_last(x_r)) begin
+      x_r_adv = x_r + {{(X_W-1){1'b0}},1'b1};
+    end else begin
+      if (!SAT_AT_MAX) x_r_adv = '0;
+
+      if (!is_y_last(y_r)) begin
+        y_r_adv = y_r + {{(Y_W-1){1'b0}},1'b1};
+      end else begin
+        if (!SAT_AT_MAX) y_r_adv = '0;
+      end
+    end
+  end
+
+  // -----------------------------------------
+  // coordinate advance logic (one step) + counters (sequential)
+  // -----------------------------------------
+  task automatic advance_xy;
+    begin
+      if (!is_x_last(x_r)) begin
+        x_r <= x_r + {{(X_W-1){1'b0}},1'b1};
+      end else begin
+        if (!SAT_AT_MAX) x_r <= '0;
+
+        if (!is_y_last(y_r)) begin
+          y_r <= y_r + {{(Y_W-1){1'b0}},1'b1};
+          if (DBG_COUNTERS_EN) line_cnt <= line_cnt + 32'd1;
+        end else begin
+          if (!SAT_AT_MAX) y_r <= '0;
+          if (DBG_COUNTERS_EN) begin
+            frame_cnt <= frame_cnt + 32'd1;
+            line_cnt  <= 32'd0;
+          end
+        end
+      end
+    end
+  endtask
+
+  // -----------------------------------------
+  // sequential
+  // -----------------------------------------
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      x_r <= '0; y_r <= '0;
+
+      x_q <= '0; y_q <= '0;
+      sof_q <= 1'b0; eol_q <= 1'b0; eof_q <= 1'b0;
+      v1_valid <= 1'b0;
+
+      err_sof_midframe <= 1'b0;
+      err_eol_mismatch <= 1'b0;
+
+      frame_cnt <= 32'd0;
+      line_cnt  <= 32'd0;
+
+    end else if (!en) begin
+      v1_valid <= 1'b0;
+      sof_q <= 1'b0; eol_q <= 1'b0; eof_q <= 1'b0;
+
+    end else begin
+      // -------------------------------------
+      // consume output
+      // -------------------------------------
+      if (fire_out) begin
+        v1_valid <= 1'b0;
+
+        if (ADVANCE_ON_VALID_ONLY) begin
+          // SOF/EOF beat: 已在 fire_in 時把 x_r/y_r 設到 next 了，consume 不要再 advance
+          if ((USE_SOF && sof_q) || (USE_EOF && eof_q)) begin
+            // no-op
+          end else if (USE_EOL && eol_q) begin
+            // (若你未來開 USE_EOL) consume EOL 後進行換行
+            x_r <= '0;
+            if (!is_y_last(y_r)) y_r <= y_r + {{(Y_W-1){1'b0}},1'b1};
+            else if (!SAT_AT_MAX) y_r <= '0;
+
+            if (DBG_COUNTERS_EN) line_cnt <= line_cnt + 32'd1;
+          end else begin
+            // normal beat consume -> advance
+            advance_xy();
+          end
+        end
+      end
+
+      // -------------------------------------
+      // accept new input into buffer (may happen with or without fire_out)
+      // -------------------------------------
+      if (fire_in) begin
+        // sticky debug checks based on CURRENT running coordinate
+        if (USE_SOF && sof) begin
+          if (!((x_r == '0) && (y_r == '0))) err_sof_midframe <= 1'b1;
+        end
+        if (USE_EOL && eol) begin
+          if (!is_x_last(x_r)) err_eol_mismatch <= 1'b1;
+        end
+
+        // capture syncs for this buffered beat
+        sof_q <= sof;
+        eol_q <= eol;
+        eof_q <= eof;
+
+        // define output coordinate for THIS accepted beat
+        if ((USE_SOF && sof) || (USE_EOF && eof)) begin
+          // control beat outputs (0,0)
+          x_q <= '0;
+          y_q <= '0;
+
+          // treat SOF/EOF as "start new frame": set running coordinate to next=(1,0) (or edge cases)
+          if (ACTIVE_W <= 1) begin
+            x_r <= '0;
+            if (ACTIVE_H <= 1) y_r <= '0;
+            else               y_r <= {{(Y_W-1){1'b0}}, 1'b1};
+          end else begin
+            x_r <= {{(X_W-1){1'b0}}, 1'b1}; // 1
+            y_r <= '0;
+          end
+
+          if (DBG_COUNTERS_EN) begin
+            frame_cnt <= frame_cnt + 32'd1;
+            line_cnt  <= 32'd0;
+          end
+
+        end else begin
+          // -----------------------------
+          // ★FIX: pop+push same cycle
+          // ADVANCE_ON_VALID_ONLY=1 時，如果同拍 fire_out+fire_in，
+          // x_r/y_r 在本拍會被 consume-side advance，但 nonblocking 使得 x_r 仍是舊值。
+          // 新 push 進來的 beat 必須吃 advance 後的座標，否則會重複/少一步。
+          // -----------------------------
+          if (fire_out && ADVANCE_ON_VALID_ONLY) begin
+            x_q <= x_r_adv;
+            y_q <= y_r_adv;
+          end else begin
+            x_q <= x_r;
+            y_q <= y_r;
+          end
+
+          // advance coordinate if we advance-on-input mode
+          if (!ADVANCE_ON_VALID_ONLY) begin
+            advance_xy();
+          end
+        end
+
+        // buffer becomes valid (even if we also fired out this cycle)
+        v1_valid <= 1'b1;
+      end
+    end
+  end
+
+  // -----------------------------------------
+  // outputs (combinational)
+  // -----------------------------------------
+  assign x = x_q;
+  assign y = y_q;
+
+  assign x_mod = x_q[1:0];
+  assign y_mod = y_q[1:0];
+
+  assign tile_j = (x_q >> TILE_SHIFT);
+  assign tile_i = (y_q >> TILE_SHIFT);
+
+  assign x_last      = v1_valid && is_x_last(x_q);
+  assign y_last      = v1_valid && is_y_last(y_q);
+  assign line_start  = v1_valid && (x_q == '0);
+  assign line_last   = v1_valid && is_x_last(x_q);
+  assign frame_start = v1_valid && (x_q == '0) && (y_q == '0);
+  assign frame_last  = v1_valid && is_x_last(x_q) && is_y_last(y_q);
+
+  assign tile_first  = v1_valid && (x_q[1:0]==2'd0) && (y_q[1:0]==2'd0);
+  assign tile_last   = v1_valid && (x_q[1:0]==2'd3) && (y_q[1:0]==2'd3);
+  assign tile_x_last = v1_valid && (x_q[1:0]==2'd3);
+  assign tile_y_last = v1_valid && (y_q[1:0]==2'd3);
+
+  // tile_idx
+  wire [$clog2(TILES_X*TILES_Y)-1:0] tile_i_l;
+  wire [$clog2(TILES_X*TILES_Y)-1:0] tile_j_l;
+  assign tile_i_l = tile_i[$clog2(TILES_X*TILES_Y)-1:0];
+  assign tile_j_l = tile_j[$clog2(TILES_X*TILES_Y)-1:0];
+  assign tile_idx = tile_i_l * TILES_X[$clog2(TILES_X*TILES_Y)-1:0] + tile_j_l;
+
+  assign in_roi =
+    v1_valid &&
+    (x_q >= ROI_X0[X_W-1:0]) && (x_q <= ROI_X1[X_W-1:0]) &&
+    (y_q >= ROI_Y0[Y_W-1:0]) && (y_q <= ROI_Y1[Y_W-1:0]);
+
+endmodule
+
+`default_nettype wire
+
+// linebuf_y_1line.sv
+// - 1-line buffer: store previous-line Y for each x (depth = ACTIVE_W)
+// - provides y_left (same-line left pixel) with x==0 clamp to y_cur
+// - read-before-write: y_up <= mem[x] (old), then mem[x] <= y_cur
+//
+// Added:
+// - ready/valid backpressure
+//   in : v1_valid, v1_ready, x, y_in
+//   out: v2_valid, v2_ready, y_cur, y_left, y_up
+//
+// Behavior:
+// - Accept input only when v1_valid && v1_ready
+// - Output registers hold when v2_valid && !v2_ready
+// - mem/prev_y_in_line update ONLY on accept (so no corruption under stall)
+// - en=0 freezes internal state and deasserts v2_valid
+
+
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module linebuf_y_1line #(
+  parameter int unsigned X_W      = 11,
+  parameter int unsigned Y_W      = 10,
+  parameter int unsigned ACTIVE_W = 1280
+)(
+  input  logic                 clk,
+  input  logic                 rst,
+  input  logic                 en,
+
+  // in
+  input  logic                 v1_valid,
+  output logic                 v1_ready,
+  input  logic [X_W-1:0]        x,
+  input  logic [Y_W-1:0]        y_in,
+
+  // out
+  output logic                 v2_valid,
+  input  logic                 v2_ready,
+  output logic [Y_W-1:0]        y_cur,
+  output logic [Y_W-1:0]        y_left,
+  output logic [Y_W-1:0]        y_up
+);
+
+  // ------------------------------------------------------------
+  // 1-line memory: previous line's y at each x
+  // ------------------------------------------------------------
+  logic [Y_W-1:0] mem [0:ACTIVE_W-1];
+
+  // same-line left pixel tracker (state)
+  logic [Y_W-1:0] prev_y_in_line;
+
+  // hold accepted x to keep output alignment under stall
+  logic [X_W-1:0] x_hold;
+
+  // ------------------------------------------------------------
+  // Address clamp function (pure combinational)
+  // ------------------------------------------------------------
+  function automatic [X_W-1:0] clamp_x(input [X_W-1:0] xin);
+    if (xin < ACTIVE_W[X_W-1:0]) clamp_x = xin;
+    else clamp_x = ACTIVE_W[X_W-1:0] - {{(X_W-1){1'b0}},1'b1};
+  endfunction
+
+  logic [X_W-1:0] x_addr_in;
+  always @* x_addr_in = clamp_x(x);
+
+  // ------------------------------------------------------------
+  // Ready/valid control
+  // One-stage output reg acts like pipeline register with backpressure
+  // ------------------------------------------------------------
+  logic accept;   // accept one input beat into output regs
+
+  always @* begin
+    // can accept new data when:
+    // - enabled AND (output empty OR downstream ready to take current)
+    v1_ready = en && (!v2_valid || v2_ready);
+    accept   = v1_valid && v1_ready;
+  end
+
+  integer i;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      v2_valid       <= 1'b0;
+      y_cur          <= '0;
+      y_left         <= '0;
+      y_up           <= '0;
+      prev_y_in_line <= '0;
+      x_hold         <= '0;
+      for (i = 0; i < ACTIVE_W; i = i + 1) begin
+        mem[i] <= '0;
+      end
+    end else if (!en) begin
+      // freeze internal state; downstream should ignore
+      v2_valid <= 1'b0;
+      // keep other regs as-is (frozen)
+    end else begin
+      // if output has valid data and downstream accepted it this cycle,
+      // v2_valid may clear unless we also accept new input (accept will set it)
+      if (v2_valid && v2_ready && !accept) begin
+        v2_valid <= 1'b0;
+      end
+
+      // load new beat if accepted
+      if (accept) begin
+        // mark output valid
+        v2_valid <= 1'b1;
+
+        // latch x for consistent output alignment under stall
+        x_hold <= x_addr_in;
+
+        // current pixel
+        y_cur <= y_in;
+
+        // y_left: clamp at x==0 to y_cur (use accepted x)
+        if (x_addr_in == {X_W{1'b0}}) y_left <= y_in;
+        else                          y_left <= prev_y_in_line;
+
+        // y_up: read previous line BEFORE writing current pixel
+        y_up <= mem[x_addr_in];
+
+        // update memory with current pixel for next line
+        mem[x_addr_in] <= y_in;
+
+        // update prev pixel in this line
+        prev_y_in_line <= y_in;
+      end
+      // else: no accept => either idle or stalled, hold y_* and state
+    end
+  end
+
+endmodule
+
+`default_nettype wire
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module pix_xy_linebuf_top #(
+  parameter int unsigned X_W      = 11,
+  parameter int unsigned Y_W      = 10,
+  parameter int unsigned ACTIVE_W = 1280,
+  parameter int unsigned ACTIVE_H = 720,
+
+  // Tile config (4x4 default)
+  parameter int unsigned TILE_SHIFT = 2,
+  parameter int unsigned TILES_X    = (ACTIVE_W >> TILE_SHIFT),
+  parameter int unsigned TILES_Y    = (ACTIVE_H >> TILE_SHIFT),
+
+  // pixel value width
+  parameter int unsigned YPIX_W = 10,
+
+  // pixel_xy_counter behavior
+  parameter bit USE_SOF = 1'b1,
+  parameter bit USE_EOL = 1'b0,
+  parameter bit USE_EOF = 1'b0,
+  parameter bit SAT_AT_MAX = 1'b0,
+  parameter bit ADVANCE_ON_VALID_ONLY = 1'b1,
+
+  // ROI defaults
+  parameter bit          ROI_EN_DEFAULT  = 1'b0,
+  parameter int unsigned ROI_X0_DEFAULT  = 0,
+  parameter int unsigned ROI_Y0_DEFAULT  = 0,
+  parameter int unsigned ROI_X1_DEFAULT  = ACTIVE_W-1,
+  parameter int unsigned ROI_Y1_DEFAULT  = ACTIVE_H-1,
+
+  parameter bit DBG_COUNTERS_EN = 1'b1
+)(
+  input  logic                   clk,
+  input  logic                   rst,
+  input  logic                   en,
+
+  // -----------------------------
+  // upstream pixel/control stream
+  // -----------------------------
+  input  logic                   pix_valid,
+  output logic                   pix_ready,
+
+  input  logic                   sof,
+  input  logic                   eol,
+  input  logic                   eof,
+
+  // pixel payload (Y)
+  input  logic [YPIX_W-1:0]      y_in,
+
+  // -----------------------------
+  // downstream output (ready/valid)
+  // -----------------------------
+  output logic                   out_valid,
+  input  logic                   out_ready,
+
+  output logic [YPIX_W-1:0]      y_cur,
+  output logic [YPIX_W-1:0]      y_left,
+  output logic [YPIX_W-1:0]      y_up,
+
+  // also export coordinates/meta if you need them
+  output logic [X_W-1:0]         x,
+  output logic [Y_W-1:0]         y,
+
+  output logic [X_W-1:0]         tile_j,
+  output logic [Y_W-1:0]         tile_i,
+  output logic [1:0]             x_mod,
+  output logic [1:0]             y_mod,
+
+  output logic                   tile_first,
+  output logic                   tile_last,
+  output logic                   tile_x_last,
+  output logic                   tile_y_last,
+
+  output logic                   x_last,
+  output logic                   y_last,
+  output logic                   line_start,
+  output logic                   line_last,
+  output logic                   frame_start,
+  output logic                   frame_last,
+
+  output logic [$clog2(TILES_X*TILES_Y)-1:0] tile_idx,
+
+  output logic                   in_roi,
+
+  output logic                   err_sof_midframe,
+  output logic                   err_eol_mismatch,
+  output logic [31:0]            frame_cnt,
+  output logic [31:0]            line_cnt
+);
+
+  // ============================================================
+  // internal ready/valid between counter -> linebuf
+  // ============================================================
+  logic                  v1_valid;
+  logic                  v1_ready;
+  logic [X_W-1:0]         x_int;
+  logic [Y_W-1:0]         y_int;
+
+  // ============================================================
+  // pixel_xy_counter
+  // ============================================================
+  pixel_xy_counter #(
+    .X_W(X_W),
+    .Y_W(Y_W),
+    .ACTIVE_W(ACTIVE_W),
+    .ACTIVE_H(ACTIVE_H),
+
+    .TILE_SHIFT(TILE_SHIFT),
+    .TILES_X(TILES_X),
+    .TILES_Y(TILES_Y),
+
+    .USE_SOF(USE_SOF),
+    .USE_EOL(USE_EOL),
+    .USE_EOF(USE_EOF),
+    .SAT_AT_MAX(SAT_AT_MAX),
+
+    .ADVANCE_ON_VALID_ONLY(ADVANCE_ON_VALID_ONLY),
+
+    .ROI_EN_DEFAULT(ROI_EN_DEFAULT),
+    .ROI_X0_DEFAULT(ROI_X0_DEFAULT),
+    .ROI_Y0_DEFAULT(ROI_Y0_DEFAULT),
+    .ROI_X1_DEFAULT(ROI_X1_DEFAULT),
+    .ROI_Y1_DEFAULT(ROI_Y1_DEFAULT),
+
+    .DBG_COUNTERS_EN(DBG_COUNTERS_EN)
+  ) u_xy (
+    .clk(clk),
+    .rst(rst),
+    .en(en),
+
+    .pix_valid(pix_valid),
+    .pix_ready(pix_ready),
+
+    .sof(sof),
+    .eol(eol),
+    .eof(eof),
+
+    .v1_valid(v1_valid),
+    .v1_ready(v1_ready),
+    .x(x_int),
+    .y(y_int),
+
+    .tile_j(tile_j),
+    .tile_i(tile_i),
+    .x_mod(x_mod),
+    .y_mod(y_mod),
+
+    .tile_first(tile_first),
+    .tile_last(tile_last),
+    .tile_x_last(tile_x_last),
+    .tile_y_last(tile_y_last),
+
+    .x_last(x_last),
+    .y_last(y_last),
+    .line_start(line_start),
+    .line_last(line_last),
+    .frame_start(frame_start),
+    .frame_last(frame_last),
+
+    .tile_idx(tile_idx),
+
+    .in_roi(in_roi),
+
+    .err_sof_midframe(err_sof_midframe),
+    .err_eol_mismatch(err_eol_mismatch),
+    .frame_cnt(frame_cnt),
+    .line_cnt(line_cnt)
+  );
+
+  // export x/y
+  assign x = x_int;
+  assign y = y_int;
+
+  // ============================================================
+  // linebuf_y_1line
+  //  - consumes (v1_valid,x,y_in)
+  //  - produces (out_valid, y_cur/y_left/y_up)
+  // ============================================================
+  linebuf_y_1line #(
+    .X_W(X_W),
+    .Y_W(YPIX_W),
+    .ACTIVE_W(ACTIVE_W)
+  ) u_lb (
+    .clk(clk),
+    .rst(rst),
+    .en(en),
+
+    .v1_valid(v1_valid),
+    .v1_ready(v1_ready),
+    .x(x_int),
+    .y_in(y_in),
+
+    .v2_valid(out_valid),
+    .v2_ready(out_ready),
+    .y_cur(y_cur),
+    .y_left(y_left),
+    .y_up(y_up)
+  );
+
+endmodule
+
+`default_nettype wire
+
+
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module tile_stats_edge_raster_4x4 #(
+  parameter int unsigned Y_W      = 8,
+  parameter int unsigned TILE_W   = 4,
+  parameter int unsigned TILE_H   = 4,
+  parameter int unsigned TILE_PIX = TILE_W*TILE_H, // 16
+  parameter int unsigned TILES_X  = 320,           // tile columns
+
+  // stats widths
+  parameter int unsigned SUM_W    = 12,            // enough for 16*255=4080 -> 12 bits
+  parameter int unsigned EDGE_W   = 32,
+
+  // output fifo depth (burst)
+  parameter int unsigned OUT_FIFO_DEPTH = 2
+)(
+  input  logic                   clk,
+  input  logic                   rst,
+  input  logic                   en,
+
+  // -----------------------------
+  // raster pixel stream (already has x/y/tile meta)
+  // -----------------------------
+  input  logic                   v2_valid,
+  output logic                   v2_ready,
+
+  input  logic [Y_W-1:0]         y_cur,
+  input  logic [Y_W-1:0]         y_left,
+  input  logic [Y_W-1:0]         y_up,
+
+  input  logic [15:0]            tile_x_idx,   // == tile_j
+  input  logic [15:0]            tile_y_idx,   // == tile_i
+  input  logic [1:0]             x_mod,
+  input  logic [1:0]             y_mod,
+
+  input  logic [15:0]            frame_id,
+
+  // -----------------------------
+  // output per-tile (paired stats+edge)
+  // -----------------------------
+  output logic                   out_valid,
+  input  logic                   out_ready,
+
+  output logic [SUM_W-1:0]       sumY,
+  output logic [Y_W-1:0]         minY,
+  output logic [Y_W-1:0]         maxY,
+
+  output logic [EDGE_W-1:0]      edge_sum,
+
+  output logic [15:0]            tile_x_o,
+  output logic [15:0]            tile_y_o,
+  output logic [15:0]            frame_id_o
+);
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+  function automatic [Y_W:0] abs_diff(input logic [Y_W-1:0] a, input logic [Y_W-1:0] b);
+    logic [Y_W:0] aa, bb;
+    begin
+      aa = {1'b0,a};
+      bb = {1'b0,b};
+      abs_diff = (aa >= bb) ? (aa - bb) : (bb - aa);
+    end
+  endfunction
+
+  // tile boundary in raster
+  wire is_tile_first = (x_mod == 2'd0) && (y_mod == 2'd0);
+  wire is_tile_last  = (x_mod == (TILE_W-1)) && (y_mod == (TILE_H-1));
+
+  // index (assume tile_x_idx < TILES_X)
+  wire [$clog2(TILES_X)-1:0] tx = tile_x_idx[$clog2(TILES_X)-1:0];
+
+  // ============================================================
+  // Per-tile-column accumulators (for current tile-row band)
+  // ============================================================
+  logic [SUM_W-1:0]  sum_acc   [TILES_X];
+  logic [Y_W-1:0]    min_acc   [TILES_X];
+  logic [Y_W-1:0]    max_acc   [TILES_X];
+  logic [EDGE_W-1:0] edge_acc  [TILES_X];
+  logic [15:0]       ty_acc    [TILES_X];
+  logic [15:0]       fid_acc   [TILES_X];
+
+  integer i;
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      for (i=0; i<TILES_X; i=i+1) begin
+        sum_acc[i]  <= '0;
+        min_acc[i]  <= {Y_W{1'b1}};
+        max_acc[i]  <= '0;
+        edge_acc[i] <= '0;
+        ty_acc[i]   <= '0;
+        fid_acc[i]  <= '0;
+      end
+    end else if (en) begin
+      if (v2_valid && v2_ready) begin
+        // reset this tile column at tile_first of that tile
+        if (is_tile_first) begin
+          sum_acc[tx]  <= {{(SUM_W-Y_W){1'b0}}, y_cur};
+          min_acc[tx]  <= y_cur;
+          max_acc[tx]  <= y_cur;
+          edge_acc[tx] <= '0;
+          ty_acc[tx]   <= tile_y_idx;
+          fid_acc[tx]  <= frame_id;
+        end else begin
+          // normal accumulate
+          sum_acc[tx] <= sum_acc[tx] + {{(SUM_W-Y_W){1'b0}}, y_cur};
+          if (y_cur < min_acc[tx]) min_acc[tx] <= y_cur;
+          if (y_cur > max_acc[tx]) max_acc[tx] <= y_cur;
+        end
+
+        // edge accumulate (simple): |cur-left| + |cur-up|
+        // (you可以換成你原本更複雜的 edge 定義)
+        edge_acc[tx] <= edge_acc[tx]
+                      + {{(EDGE_W-(Y_W+1)){1'b0}}, abs_diff(y_cur, y_left)}
+                      + {{(EDGE_W-(Y_W+1)){1'b0}}, abs_diff(y_cur, y_up)};
+      end
+    end
+  end
+
+  // ============================================================
+  // Output FIFO (burst=2)
+  // ============================================================
+  localparam int unsigned OD = OUT_FIFO_DEPTH;
+  localparam int unsigned O_PTR_W = (OD <= 2) ? 1 : $clog2(OD);
+
+  logic [O_PTR_W-1:0] o_rd, o_wr;
+  logic [$clog2(OD):0] o_cnt;
+
+  wire o_full  = (o_cnt == OD);
+  wire o_empty = (o_cnt == 0);
+
+  // accept pixels only if output fifo not full when tile_last wants to push
+  // easiest safe rule: stall input only when we are at tile_last AND fifo full
+  // (otherwise keep accepting to not throttle raster)
+  assign v2_ready = ~(o_full && v2_valid && is_tile_last);
+
+  // push output when tile_last fires
+  wire o_push = v2_valid && v2_ready && is_tile_last;
+
+  // pop when downstream takes
+  assign out_valid = ~o_empty;
+  wire o_pop = out_valid && out_ready;
+
+  // fifo payload
+  logic [SUM_W-1:0]  sum_mem   [OD];
+  logic [Y_W-1:0]    min_mem   [OD];
+  logic [Y_W-1:0]    max_mem   [OD];
+  logic [EDGE_W-1:0] edge_mem  [OD];
+  logic [15:0]       tx_mem    [OD];
+  logic [15:0]       ty_mem    [OD];
+  logic [15:0]       fid_mem   [OD];
+
+  // drive outputs from head
+  assign sumY       = sum_mem[o_rd];
+  assign minY       = min_mem[o_rd];
+  assign maxY       = max_mem[o_rd];
+  assign edge_sum   = edge_mem[o_rd];
+  assign tile_x_o   = tx_mem[o_rd];
+  assign tile_y_o   = ty_mem[o_rd];
+  assign frame_id_o = fid_mem[o_rd];
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      o_rd  <= '0;
+      o_wr  <= '0;
+      o_cnt <= '0;
+    end else if (en) begin
+      case ({o_push, o_pop})
+        2'b10: begin
+          sum_mem[o_wr]  <= sum_acc[tx];
+          min_mem[o_wr]  <= min_acc[tx];
+          max_mem[o_wr]  <= max_acc[tx];
+          edge_mem[o_wr] <= edge_acc[tx];
+          tx_mem[o_wr]   <= tile_x_idx;
+          ty_mem[o_wr]   <= ty_acc[tx];
+          fid_mem[o_wr]  <= fid_acc[tx];
+
+          o_wr  <= o_wr + 1'b1;
+          o_cnt <= o_cnt + 1'b1;
+        end
+        2'b01: begin
+          o_rd  <= o_rd + 1'b1;
+          o_cnt <= o_cnt - 1'b1;
+        end
+        2'b11: begin
+          // pop+push
+          o_rd <= o_rd + 1'b1;
+
+          sum_mem[o_wr]  <= sum_acc[tx];
+          min_mem[o_wr]  <= min_acc[tx];
+          max_mem[o_wr]  <= max_acc[tx];
+          edge_mem[o_wr] <= edge_acc[tx];
+          tx_mem[o_wr]   <= tile_x_idx;
+          ty_mem[o_wr]   <= ty_acc[tx];
+          fid_mem[o_wr]  <= fid_acc[tx];
+
+          o_wr <= o_wr + 1'b1;
+          // o_cnt unchanged
+        end
+        default: ;
+      endcase
+    end
+  end
+
+endmodule
+
+`default_nettype wire
+
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module pix_xy_linebuf_stats_edge_top #(
+  // -----------------------------
+  // video / coordinate
+  // -----------------------------
+  parameter int unsigned X_W      = 11,
+  parameter int unsigned Y_W      = 10,
+  parameter int unsigned ACTIVE_W = 1280,
+  parameter int unsigned ACTIVE_H = 720,
+
+  // Tile config (4x4 default)
+  parameter int unsigned TILE_SHIFT = 2,
+  parameter int unsigned TILES_X    = (ACTIVE_W >> TILE_SHIFT),
+  parameter int unsigned TILES_Y    = (ACTIVE_H >> TILE_SHIFT),
+
+  // pixel value width
+  parameter int unsigned YPIX_W = 8,
+
+  // pixel_xy_counter behavior
+  parameter bit USE_SOF = 1'b1,
+  parameter bit USE_EOL = 1'b0,
+  parameter bit USE_EOF = 1'b0,
+  parameter bit SAT_AT_MAX = 1'b0,
+  parameter bit ADVANCE_ON_VALID_ONLY = 1'b1,
+
+  // ROI defaults (keep same style as your pix_xy_linebuf_top)
+  parameter bit          ROI_EN_DEFAULT  = 1'b0,
+  parameter int unsigned ROI_X0_DEFAULT  = 0,
+  parameter int unsigned ROI_Y0_DEFAULT  = 0,
+  parameter int unsigned ROI_X1_DEFAULT  = ACTIVE_W-1,
+  parameter int unsigned ROI_Y1_DEFAULT  = ACTIVE_H-1,
+
+  parameter bit DBG_COUNTERS_EN = 1'b1,
+
+  // -----------------------------
+  // tile_stats_edge_4x4 knobs
+  // -----------------------------
+  parameter int unsigned TILE_W = 4,
+  parameter int unsigned TILE_H = 4,
+
+  parameter bit SUPPORT_PIX_VALID_STATS = 1'b1,
+  parameter bit DO_SUMSQ_STATS          = 1'b0,
+  parameter bit ASSERT_ON_STATS         = 1'b1,
+
+  parameter bit SUPPORT_PIX_VALID_EDGE  = 1'b1,
+  parameter bit SUPPORT_TILE_START_EDGE = 1'b1,
+  parameter bit ASSERT_ON_EDGE          = 1'b0,
+
+  parameter int unsigned EDGE_MODE = 0,
+  parameter int unsigned EDGE_THR  = 8,
+  parameter int unsigned EDGE_W    = 32,
+  parameter int unsigned CNT_W     = 8,
+
+  // ---- derived widths for stats output ports ----
+  parameter int unsigned TILE_PIXELS = TILE_W*TILE_H,
+  parameter int unsigned SUM_MAX     = TILE_PIXELS * ((1<<YPIX_W) - 1),
+  parameter int unsigned SUM_W       = (SUM_MAX <= 1) ? 1 : $clog2(SUM_MAX + 1),
+
+  parameter int unsigned SUMSQ_MAX   = TILE_PIXELS * (((1<<YPIX_W)-1) * ((1<<YPIX_W)-1)),
+  parameter int unsigned SUMSQ_W     = (SUMSQ_MAX <= 1) ? 1 : $clog2(SUMSQ_MAX + 1)
+)(
+  input  logic                   clk,
+  input  logic                   rst,
+  input  logic                   en,
+
+  // -----------------------------
+  // upstream pixel/control stream
+  // -----------------------------
+  input  logic                   pix_valid,
+  output logic                   pix_ready,
+  input  logic                   sof,
+  input  logic                   eol,
+  input  logic                   eof,
+  input  logic [YPIX_W-1:0]      y_in,
+
+  // -----------------------------
+  // downstream tile bundle (ready/valid)
+  // -----------------------------
+  output logic                   out_valid,
+  input  logic                   out_ready,
+
+  // ---- stats outputs ----
+  output logic [SUM_W-1:0]       sumY,
+  output logic [YPIX_W-1:0]      minY,
+  output logic [YPIX_W-1:0]      maxY,
+  output logic [YPIX_W-1:0]      meanY,
+  output logic [YPIX_W-1:0]      rangeY,
+
+  output logic                   stats_tile_err,
+  output logic [7:0]             stats_err_code,
+  output logic [$clog2(TILE_W*TILE_H+1)-1:0] stats_pix_cnt_o,
+
+  // meta pass-through (from our wrapper policy)
+  output logic [15:0]            y_meta_o,
+  output logic [15:0]            tile_x_o,
+  output logic [15:0]            tile_y_o,
+  output logic [15:0]            frame_id_o,
+
+  // ---- edge outputs ----
+  output logic [EDGE_W-1:0]      edge_sum,
+  output logic [EDGE_W-1:0]      edge_max,
+  output logic [CNT_W-1:0]       edge_cnt,
+  output logic [EDGE_W-1:0]      edge_mean,
+
+  // -----------------------------
+  // also export coordinates/meta if you need them
+  // -----------------------------
+  output logic [X_W-1:0]         x,
+  output logic [Y_W-1:0]         y,
+
+  output logic [X_W-1:0]         tile_j,
+  output logic [Y_W-1:0]         tile_i,
+  output logic [1:0]             x_mod,
+  output logic [1:0]             y_mod,
+
+  output logic                   tile_first,
+  output logic                   tile_last,
+  output logic                   in_roi,
+
+  output logic                   err_sof_midframe,
+  output logic                   err_eol_mismatch,
+  output logic [31:0]            frame_cnt,
+  output logic [31:0]            line_cnt
+);
+
+  // ============================================================
+  // Stage A: pix_xy_linebuf_top
+  // ============================================================
+  logic                v2_valid;
+  logic                v2_ready;
+  logic [YPIX_W-1:0]    y_cur, y_left, y_up;
+
+  // Unused but available from pix_xy_linebuf_top (keep for debug if you want)
+  logic tile_x_last, tile_y_last;
+  logic x_last, y_last, line_start, line_last, frame_start, frame_last;
+  logic [$clog2(TILES_X*TILES_Y)-1:0] tile_idx;
+
+  pix_xy_linebuf_top #(
+    .X_W(X_W),
+    .Y_W(Y_W),
+    .ACTIVE_W(ACTIVE_W),
+    .ACTIVE_H(ACTIVE_H),
+
+    .TILE_SHIFT(TILE_SHIFT),
+    .TILES_X(TILES_X),
+    .TILES_Y(TILES_Y),
+
+    .YPIX_W(YPIX_W),
+
+    .USE_SOF(USE_SOF),
+    .USE_EOL(USE_EOL),
+    .USE_EOF(USE_EOF),
+    .SAT_AT_MAX(SAT_AT_MAX),
+    .ADVANCE_ON_VALID_ONLY(ADVANCE_ON_VALID_ONLY),
+
+    .ROI_EN_DEFAULT(ROI_EN_DEFAULT),
+    .ROI_X0_DEFAULT(ROI_X0_DEFAULT),
+    .ROI_Y0_DEFAULT(ROI_Y0_DEFAULT),
+    .ROI_X1_DEFAULT(ROI_X1_DEFAULT),
+    .ROI_Y1_DEFAULT(ROI_Y1_DEFAULT),
+
+    .DBG_COUNTERS_EN(DBG_COUNTERS_EN)
+  ) u_linebuf (
+    .clk(clk),
+    .rst(rst),
+    .en(en),
+
+    .pix_valid(pix_valid),
+    .pix_ready(pix_ready),
+
+    .sof(sof),
+    .eol(eol),
+    .eof(eof),
+
+    .y_in(y_in),
+
+    .out_valid(v2_valid),
+    .out_ready(v2_ready),
+
+    .y_cur(y_cur),
+    .y_left(y_left),
+    .y_up(y_up),
+
+    .x(x),
+    .y(y),
+
+    .tile_j(tile_j),
+    .tile_i(tile_i),
+    .x_mod(x_mod),
+    .y_mod(y_mod),
+
+    .tile_first(tile_first),
+    .tile_last(tile_last),
+    .tile_x_last(tile_x_last),
+    .tile_y_last(tile_y_last),
+
+    .x_last(x_last),
+    .y_last(y_last),
+    .line_start(line_start),
+    .line_last(line_last),
+    .frame_start(frame_start),
+    .frame_last(frame_last),
+
+    .tile_idx(tile_idx),
+
+    .in_roi(in_roi),
+
+    .err_sof_midframe(err_sof_midframe),
+    .err_eol_mismatch(err_eol_mismatch),
+    .frame_cnt(frame_cnt),
+    .line_cnt(line_cnt)
+  );
+
+  // ============================================================
+  // Meta policy for tile_stats_edge_4x4
+  // - tile_x/y idx: use tile_j/tile_i (truncate to 16)
+  // - frame_id:     use frame_cnt (truncate to 16)
+  // - y_meta:       optional; here we pass current y (or 0)
+  // - pix_in_tile_valid: use in_roi (or 1 if you want always)
+  // - tile_start: use tile_first
+  // ============================================================
+  logic [15:0] tile_x_idx, tile_y_idx, frame_id, y_meta;
+  logic        pix_in_tile_valid;
+  logic        tile_start;
+assign tile_x_idx = {{(16-X_W){1'b0}}, tile_j};    // tile_j width = X_W
+assign tile_y_idx = {{(16-Y_W){1'b0}}, tile_i};    // tile_i width = Y_W
+assign frame_id   = frame_cnt[15:0];               // frame_cnt is 32 bits
+assign y_meta     = {{(16-Y_W){1'b0}}, y};         // y width = Y_W
+
+  // 2) or pass something else (e.g., mean of tile, luma tag, etc.)
+
+  //assign pix_in_tile_valid = in_roi;     // common choice: only ROI pixels count
+  assign pix_in_tile_valid = 1'b1;  
+  assign tile_start        = tile_first; // first pixel of tile
+
+    // ============================================================
+  // Stage B (RASTER): per-tile stats+edge that works with raster scan
+  // ============================================================
+  tile_stats_edge_raster_4x4 #(
+    .Y_W(YPIX_W),
+    .TILE_W(TILE_W),
+    .TILE_H(TILE_H),
+    .TILES_X(TILES_X),
+
+    .SUM_W(SUM_W),
+    .EDGE_W(EDGE_W),
+
+    .OUT_FIFO_DEPTH(2)
+  ) u_stats_edge_raster (
+    .clk(clk),
+    .rst(rst),
+    .en(en),
+
+    .v2_valid(v2_valid),
+    .v2_ready(v2_ready),
+
+    .y_cur(y_cur),
+    .y_left(y_left),
+    .y_up(y_up),
+
+    .tile_x_idx(tile_x_idx),
+    .tile_y_idx(tile_y_idx),
+    .x_mod(x_mod),
+    .y_mod(y_mod),
+
+    .frame_id(frame_id),
+
+    .out_valid(out_valid),
+    .out_ready(out_ready),
+
+    .sumY(sumY),
+    .minY(minY),
+    .maxY(maxY),
+
+    .edge_sum(edge_sum),
+
+    .tile_x_o(tile_x_o),
+    .tile_y_o(tile_y_o),
+    .frame_id_o(frame_id_o)
+  );
+
+  // edge_max/edge_cnt/edge_mean 你如果暫時不用，可以先 tie-off
+  assign edge_max  = '0;
+  assign edge_cnt  = '0;
+  assign edge_mean = '0;
+
+
+endmodule
+
+`default_nettype wire
+
+
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module feature_pack_and_valid #(
+  parameter int unsigned TILES_X = 320,
+  parameter int unsigned TILES_Y = 180,
+
+  parameter int unsigned SUM_W   = 12,
+  parameter int unsigned Y_W     = 8,
+  parameter int unsigned EDGE_W  = 32,
+
+  parameter int unsigned FEAT_W  = 16,
+  parameter int unsigned FEAT_DIM= 4,        // 1..8
+
+  parameter bit EDGE_USE_MEAN = 1'b1,
+
+  // mean config
+  parameter int unsigned TILE_PIX_SHIFT  = 4,
+  parameter int unsigned TILE_PIX_N      = 16,
+  parameter bit          MEAN_MODE_SHIFT = 1'b1,
+
+  // 0: strict same-cycle join (NO internal buffering)
+  // 1: buffered join (recommended)
+  parameter bit MATCH_MODE_BUFFERED = 1'b1,
+
+  // mismatch drop policy (only used when buffered)
+  // 0: drop both
+  // 1: drop older id (recommended)
+  // 2: drop v3 only
+  // 3: drop v4 only
+  parameter int unsigned MISMATCH_POLICY = 1,
+
+  parameter bit ZERO_WHEN_INVALID = 1'b0,
+
+  // post-process
+  parameter int unsigned FEAT0_SHIFT = 0,
+  parameter int unsigned FEAT1_SHIFT = 0,
+  parameter int unsigned FEAT2_SHIFT = 0,
+  parameter int unsigned FEAT3_SHIFT = 0,
+  parameter int signed   FEAT0_BIAS  = 0,
+  parameter int signed   FEAT1_BIAS  = 0,
+  parameter int signed   FEAT2_BIAS  = 0,
+  parameter int signed   FEAT3_BIAS  = 0,
+  parameter int unsigned FEAT_CLAMP_MAX = (1<<FEAT_W)-1,
+
+  parameter int unsigned TILE_I_W  = 16,
+  parameter int unsigned TILE_J_W  = 16,
+  parameter int unsigned TILE_ID_W = (TILES_X*TILES_Y <= 1) ? 1 : $clog2(TILES_X*TILES_Y),
+
+  parameter bit ENABLE_CNTS = 1'b1
+)(
+  input  logic                     clk,
+  input  logic                     rst,
+
+  // V3 (stats)
+  input  logic                     v3_valid,
+  output logic                     v3_ready,
+  input  logic [SUM_W-1:0]         sumY,
+  input  logic [Y_W-1:0]           minY,
+  input  logic [Y_W-1:0]           maxY,
+  input  logic [TILE_I_W-1:0]      tile_i,
+  input  logic [TILE_J_W-1:0]      tile_j,
+
+  // V4 (edge)
+  input  logic                     v4_valid,
+  output logic                     v4_ready,
+  input  logic [EDGE_W-1:0]        edge_sum,
+  input  logic [TILE_I_W-1:0]      v4_tile_i,
+  input  logic [TILE_J_W-1:0]      v4_tile_j,
+
+  // Output
+  output logic                     feat_valid,
+  input  logic                     feat_ready,
+
+  output logic [TILE_I_W-1:0]      tile_i_o,
+  output logic [TILE_J_W-1:0]      tile_j_o,
+  output logic [TILE_ID_W-1:0]     tile_id_o,
+
+  output logic [FEAT_W-1:0]        feat0,
+  output logic [FEAT_W-1:0]        feat1,
+  output logic [FEAT_W-1:0]        feat2,
+  output logic [FEAT_W-1:0]        feat3,
+  output logic [FEAT_W-1:0]        feat4,
+  output logic [FEAT_W-1:0]        feat5,
+  output logic [FEAT_W-1:0]        feat6,
+  output logic [FEAT_W-1:0]        feat7,
+  output logic [8*FEAT_W-1:0]      feat_vec,
+
+  output logic                     err_mismatch_pulse,
+  output logic [31:0]              cnt_join_ok,
+  output logic [31:0]              cnt_mismatch,
+  output logic [31:0]              cnt_drop
+);
+
+  // ------------------------------------------------------------
+  // util
+  // ------------------------------------------------------------
+  function automatic logic [TILE_ID_W-1:0] calc_id(
+    input logic [TILE_I_W-1:0] ti,
+    input logic [TILE_J_W-1:0] tj
+  );
+    logic [31:0] full;
+    begin
+      full = (ti * TILES_X) + tj;
+      calc_id = full[TILE_ID_W-1:0];
+    end
+  endfunction
+
+  function automatic logic [FEAT_W-1:0] clamp_u(input integer signed x);
+    integer signed y;
+    begin
+      y = x;
+      if (y < 0) y = 0;
+      if (y > integer'(FEAT_CLAMP_MAX)) y = integer'(FEAT_CLAMP_MAX);
+      clamp_u = y[FEAT_W-1:0];
+    end
+  endfunction
+
+  function automatic logic [FEAT_W-1:0] postproc(
+    input logic [FEAT_W-1:0] in_u,
+    input int unsigned       sh,
+    input int signed         bias
+  );
+    integer signed x;
+    begin
+      x = $signed({1'b0, in_u}) >>> sh;
+      x = x + bias;
+      postproc = clamp_u(x);
+    end
+  endfunction
+
+  function automatic logic [FEAT_W-1:0] y_mean_from_sum(input logic [SUM_W-1:0] s);
+    integer unsigned m;
+    begin
+      if (MEAN_MODE_SHIFT) begin
+        if (SUM_W > TILE_PIX_SHIFT) m = (s >> TILE_PIX_SHIFT);
+        else                        m = 0;
+      end else begin
+        if (TILE_PIX_N != 0) m = s / TILE_PIX_N;
+        else                 m = 0;
+      end
+      y_mean_from_sum = m[FEAT_W-1:0];
+    end
+  endfunction
+
+  function automatic logic [FEAT_W-1:0] edge_feat_from_sum(input logic [EDGE_W-1:0] e);
+    logic [EDGE_W-1:0] tmp;
+    begin
+      tmp = (EDGE_USE_MEAN) ? (e >> TILE_PIX_SHIFT) : e;
+      edge_feat_from_sum = tmp[FEAT_W-1:0];
+    end
+  endfunction
+
+  // ------------------------------------------------------------
+  // Output 1-deep hold
+  // ------------------------------------------------------------
+  logic hold_valid;
+  logic [TILE_I_W-1:0]  ti_r;
+  logic [TILE_J_W-1:0]  tj_r;
+  logic [TILE_ID_W-1:0] id_r;
+  logic [FEAT_W-1:0] f0_r,f1_r,f2_r,f3_r,f4_r,f5_r,f6_r,f7_r;
+  logic [8*FEAT_W-1:0] vec_r;
+
+  wire out_can_load = (!hold_valid) || feat_ready;
+
+  // output comb
+  always_comb begin
+    feat_valid = hold_valid;
+
+    if (ZERO_WHEN_INVALID && !hold_valid) begin
+      tile_i_o='0; tile_j_o='0; tile_id_o='0;
+      feat0='0; feat1='0; feat2='0; feat3='0;
+      feat4='0; feat5='0; feat6='0; feat7='0;
+      feat_vec='0;
+    end else begin
+      tile_i_o=ti_r; tile_j_o=tj_r; tile_id_o=id_r;
+      feat0=f0_r; feat1=f1_r; feat2=f2_r; feat3=f3_r;
+      feat4=f4_r; feat5=f5_r; feat6=f6_r; feat7=f7_r;
+      feat_vec=vec_r;
+    end
+  end
+
+  // ------------------------------------------------------------
+  // Buffered mode: 1-deep skid for each input
+  // ------------------------------------------------------------
+  logic b3_v, b4_v;
+
+  logic [SUM_W-1:0]    sum_b;
+  logic [Y_W-1:0]      min_b, max_b;
+  logic [TILE_I_W-1:0] ti_b;
+  logic [TILE_J_W-1:0] tj_b;
+
+  logic [EDGE_W-1:0]   edge_b;
+  logic [TILE_I_W-1:0] v4_ti_b;
+  logic [TILE_J_W-1:0] v4_tj_b;
+
+  wire [TILE_ID_W-1:0] id3_b = calc_id(ti_b,   tj_b);
+  wire [TILE_ID_W-1:0] id4_b = calc_id(v4_ti_b, v4_tj_b);
+
+  wire b_match   = b3_v && b4_v && (id3_b == id4_b);
+  wire b_mis     = b3_v && b4_v && (id3_b != id4_b);
+
+  // drop decision (only when b_mis=1)
+  logic drop3, drop4;
+  always_comb begin
+    drop3 = 1'b0;
+    drop4 = 1'b0;
+    if (b_mis) begin
+      case (MISMATCH_POLICY)
+        0: begin drop3 = 1'b1; drop4 = 1'b1; end // drop both
+        1: begin // drop older id
+          if (id3_b < id4_b) begin drop3 = 1'b1; drop4 = 1'b0; end
+          else               begin drop3 = 1'b0; drop4 = 1'b1; end
+        end
+        2: begin drop3 = 1'b1; drop4 = 1'b0; end
+        default: begin drop3 = 1'b0; drop4 = 1'b1; end
+      endcase
+    end
+  end
+
+  // join fire
+  wire do_join = MATCH_MODE_BUFFERED ? (b_match && out_can_load) : 1'b0;
+
+  // in buffered mode: we can accept upstream if buffer will be free after this cycle
+  // buffer frees on: do_join (consumes both) or drop of that buffer
+  wire b3_will_free = do_join || (drop3);
+  wire b4_will_free = do_join || (drop4);
+
+  always@(*) begin
+    if (MATCH_MODE_BUFFERED) begin
+      v3_ready = (!b3_v) || b3_will_free; // can take new if empty or freeing
+      v4_ready = (!b4_v) || b4_will_free;
+    end else begin
+      // strict: require same-cycle join and output space
+      // ready only when we can accept the pair into output
+      v3_ready = out_can_load && v4_valid && (calc_id(tile_i,tile_j)==calc_id(v4_tile_i,v4_tile_j));
+      v4_ready = out_can_load && v3_valid && (calc_id(tile_i,tile_j)==calc_id(v4_tile_i,v4_tile_j));
+    end
+  end
+
+  // strict join
+  wire strict_match = v3_valid && v4_valid &&
+                      (calc_id(tile_i,tile_j) == calc_id(v4_tile_i,v4_tile_j));
+  wire strict_take  = (!MATCH_MODE_BUFFERED) && strict_match && out_can_load;
+
+  // ------------------------------------------------------------
+  // sequential: buffers + output + counters
+  // ------------------------------------------------------------
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      hold_valid <= 1'b0;
+      ti_r <= '0; tj_r <= '0; id_r <= '0;
+      f0_r <= '0; f1_r <= '0; f2_r <= '0; f3_r <= '0;
+      f4_r <= '0; f5_r <= '0; f6_r <= '0; f7_r <= '0;
+      vec_r <= '0;
+
+      b3_v <= 1'b0;
+      b4_v <= 1'b0;
+
+      sum_b <= '0; min_b <= '0; max_b <= '0; ti_b <= '0; tj_b <= '0;
+      edge_b <= '0; v4_ti_b <= '0; v4_tj_b <= '0;
+
+      err_mismatch_pulse <= 1'b0;
+      cnt_join_ok  <= 32'd0;
+      cnt_mismatch <= 32'd0;
+      cnt_drop     <= 32'd0;
+    end else begin
+      err_mismatch_pulse <= 1'b0;
+
+      // output consume
+      if (hold_valid && feat_ready) begin
+        hold_valid <= 1'b0;
+      end
+
+      // -------------------------
+      // buffered mode path
+      // -------------------------
+      if (MATCH_MODE_BUFFERED) begin
+        // load/update b3
+        if (v3_valid && v3_ready) begin
+          // if buffer is freeing and also taking new, just overwrite with new
+          b3_v  <= 1'b1;
+          sum_b <= sumY;
+          min_b <= minY;
+          max_b <= maxY;
+          ti_b  <= tile_i;
+          tj_b  <= tile_j;
+        end else if (drop3) begin
+          b3_v <= 1'b0;
+          if (ENABLE_CNTS) cnt_drop <= cnt_drop + 1;
+        end
+
+        // load/update b4
+        if (v4_valid && v4_ready) begin
+          b4_v     <= 1'b1;
+          edge_b   <= edge_sum;
+          v4_ti_b  <= v4_tile_i;
+          v4_tj_b  <= v4_tile_j;
+        end else if (drop4) begin
+          b4_v <= 1'b0;
+          if (ENABLE_CNTS) cnt_drop <= cnt_drop + 1;
+        end
+
+        // mismatch pulse / count (when both valid and not match)
+        if (b_mis) begin
+          err_mismatch_pulse <= 1'b1;
+          if (ENABLE_CNTS) cnt_mismatch <= cnt_mismatch + 1;
+        end
+
+        // join -> load output + clear both buffers
+        if (do_join) begin
+          logic [FEAT_W-1:0] f0n,f1n,f2n,f3n;
+          logic [FEAT_W-1:0] ym, ed;
+          begin
+            ym  = y_mean_from_sum(sum_b);
+            ed  = edge_feat_from_sum(edge_b);
+
+            f0n = postproc(ym,  FEAT0_SHIFT, FEAT0_BIAS);
+            f1n = postproc({{(FEAT_W-Y_W){1'b0}}, max_b}, FEAT1_SHIFT, FEAT1_BIAS);
+            f2n = postproc({{(FEAT_W-Y_W){1'b0}}, min_b}, FEAT2_SHIFT, FEAT2_BIAS);
+            f3n = postproc(ed,  FEAT3_SHIFT, FEAT3_BIAS);
+
+            ti_r <= ti_b;
+            tj_r <= tj_b;
+            id_r <= id3_b;
+
+            f0_r <= f0n; f1_r <= f1n; f2_r <= f2n; f3_r <= f3n;
+
+            // FEAT_DIM 1..8: only first dims enabled; rest zero
+            f4_r <= '0; f5_r <= '0; f6_r <= '0; f7_r <= '0;
+
+            // pack {feat7..feat0}
+            vec_r <= { {4{ {FEAT_W{1'b0}} }}, f3n, f2n, f1n, f0n };
+
+
+            hold_valid <= 1'b1;
+
+            b3_v <= 1'b0;
+            b4_v <= 1'b0;
+
+            if (ENABLE_CNTS) cnt_join_ok <= cnt_join_ok + 1;
+          end
+        end
+      end
+
+      // -------------------------
+      // strict mode path
+      // -------------------------
+      else begin
+        if (v3_valid && v4_valid && !strict_match) begin
+          err_mismatch_pulse <= 1'b1;
+          if (ENABLE_CNTS) cnt_mismatch <= cnt_mismatch + 1;
+        end
+
+        if (strict_take) begin
+          logic [FEAT_W-1:0] f0n,f1n,f2n,f3n;
+          logic [FEAT_W-1:0] ym, ed;
+          begin
+            ym  = y_mean_from_sum(sumY);
+            ed  = edge_feat_from_sum(edge_sum);
+
+            f0n = postproc(ym,  FEAT0_SHIFT, FEAT0_BIAS);
+            f1n = postproc({{(FEAT_W-Y_W){1'b0}}, maxY}, FEAT1_SHIFT, FEAT1_BIAS);
+            f2n = postproc({{(FEAT_W-Y_W){1'b0}}, minY}, FEAT2_SHIFT, FEAT2_BIAS);
+            f3n = postproc(ed,  FEAT3_SHIFT, FEAT3_BIAS);
+
+            ti_r <= tile_i;
+            tj_r <= tile_j;
+            id_r <= calc_id(tile_i, tile_j);
+
+            f0_r <= f0n; f1_r <= f1n; f2_r <= f2n; f3_r <= f3n;
+            f4_r <= '0; f5_r <= '0; f6_r <= '0; f7_r <= '0;
+
+            vec_r <= { {4{ {FEAT_W{1'b0}} }}, f3n, f2n, f1n, f0n };
+
+
+            hold_valid <= 1'b1;
+
+            if (ENABLE_CNTS) cnt_join_ok <= cnt_join_ok + 1;
+          end
+        end
+      end
+    end
+  end
+
+  // (optional) elaboration checks
+  initial begin
+    if (FEAT_DIM < 1 || FEAT_DIM > 8) begin
+      $fatal(1, "FEAT_DIM must be 1..8, got %0d", FEAT_DIM);
+    end
+    if ($bits(feat_vec) != 8*FEAT_W) begin
+      $fatal(1, "feat_vec width mismatch");
+    end
+  end
+
+endmodule
+
+`default_nettype wire
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module pix_xy_feature_top #(
+  // -----------------------------
+  // video / coordinate
+  // -----------------------------
+  parameter int unsigned X_W      = 11,
+  parameter int unsigned Y_W      = 10,
+  parameter int unsigned ACTIVE_W = 1280,
+  parameter int unsigned ACTIVE_H = 720,
+
+  // Tile config (4x4 default)
+  parameter int unsigned TILE_SHIFT = 2,
+  parameter int unsigned TILES_X    = (ACTIVE_W >> TILE_SHIFT),
+  parameter int unsigned TILES_Y    = (ACTIVE_H >> TILE_SHIFT),
+
+  // pixel value width
+  parameter int unsigned YPIX_W = 8,
+
+  // pixel_xy_counter behavior
+  parameter bit USE_SOF = 1'b1,
+  parameter bit USE_EOL = 1'b0,
+  parameter bit USE_EOF = 1'b0,
+  parameter bit SAT_AT_MAX = 1'b0,
+  parameter bit ADVANCE_ON_VALID_ONLY = 1'b1,
+
+  // ROI defaults
+  parameter bit          ROI_EN_DEFAULT  = 1'b0,
+  parameter int unsigned ROI_X0_DEFAULT  = 0,
+  parameter int unsigned ROI_Y0_DEFAULT  = 0,
+  parameter int unsigned ROI_X1_DEFAULT  = ACTIVE_W-1,
+  parameter int unsigned ROI_Y1_DEFAULT  = ACTIVE_H-1,
+
+  parameter bit DBG_COUNTERS_EN = 1'b1,
+
+  // -----------------------------
+  // tile_stats_edge_4x4 knobs
+  // -----------------------------
+  parameter int unsigned TILE_W = 4,
+  parameter int unsigned TILE_H = 4,
+
+  parameter bit SUPPORT_PIX_VALID_STATS = 1'b1,
+  parameter bit DO_SUMSQ_STATS          = 1'b0,
+  parameter bit ASSERT_ON_STATS         = 1'b1,
+
+  parameter bit SUPPORT_PIX_VALID_EDGE  = 1'b1,
+  parameter bit SUPPORT_TILE_START_EDGE = 1'b1,
+  parameter bit ASSERT_ON_EDGE          = 1'b0,
+
+  parameter int unsigned EDGE_MODE = 0,
+  parameter int unsigned EDGE_THR  = 8,
+  parameter int unsigned EDGE_W    = 32,
+  parameter int unsigned CNT_W     = 8,
+
+  // ---- derived widths for stats output ports ----
+  parameter int unsigned TILE_PIXELS = TILE_W*TILE_H,
+  parameter int unsigned SUM_MAX     = TILE_PIXELS * ((1<<YPIX_W) - 1),
+  parameter int unsigned SUM_W       = (SUM_MAX <= 1) ? 1 : $clog2(SUM_MAX + 1),
+
+  parameter int unsigned SUMSQ_MAX   = TILE_PIXELS * (((1<<YPIX_W)-1) * ((1<<YPIX_W)-1)),
+  parameter int unsigned SUMSQ_W     = (SUMSQ_MAX <= 1) ? 1 : $clog2(SUMSQ_MAX + 1),
+
+  // -----------------------------
+  // feature pack knobs
+  // -----------------------------
+  parameter int unsigned FEAT_W   = 16,
+  parameter int unsigned FEAT_DIM = 4,
+
+  parameter bit EDGE_USE_MEAN = 1'b1,
+
+  // mean config (tile=4x4 => shift=4)
+  parameter int unsigned TILE_PIX_SHIFT  = 4,
+  parameter int unsigned TILE_PIX_N      = 16,
+  parameter bit          MEAN_MODE_SHIFT = 1'b1,
+
+  // join/matching mode inside packer
+  parameter bit MATCH_MODE_BUFFERED = 1'b0,
+
+  parameter bit ZERO_WHEN_INVALID = 1'b0,
+
+  // post-process
+  parameter int unsigned FEAT0_SHIFT = 0,
+  parameter int unsigned FEAT1_SHIFT = 0,
+  parameter int unsigned FEAT2_SHIFT = 0,
+  parameter int unsigned FEAT3_SHIFT = 0,
+  parameter int signed   FEAT0_BIAS  = 0,
+  parameter int signed   FEAT1_BIAS  = 0,
+  parameter int signed   FEAT2_BIAS  = 0,
+  parameter int signed   FEAT3_BIAS  = 0,
+  parameter int unsigned FEAT_CLAMP_MAX = (1<<FEAT_W)-1,
+
+  // meta widths
+  parameter int unsigned TILE_I_W  = 16,
+  parameter int unsigned TILE_J_W  = 16,
+  parameter int unsigned TILE_ID_W = (TILES_X*TILES_Y <= 1) ? 1 : $clog2(TILES_X*TILES_Y),
+
+  parameter bit ENABLE_CNTS = 1'b1
+)(
+  input  logic                   clk,
+  input  logic                   rst,
+  input  logic                   en,
+
+  // -----------------------------
+  // upstream pixel/control stream
+  // -----------------------------
+  input  logic                   pix_valid,
+  output logic                   pix_ready,
+  input  logic                   sof,
+  input  logic                   eol,
+  input  logic                   eof,
+  input  logic [YPIX_W-1:0]      y_in,
+
+  // -----------------------------
+  // downstream feature stream
+  // -----------------------------
+  output logic                   feat_valid,
+  input  logic                   feat_ready,
+
+  output logic [TILE_I_W-1:0]    tile_i_o,
+  output logic [TILE_J_W-1:0]    tile_j_o,
+  output logic [TILE_ID_W-1:0]   tile_id_o,
+
+  output logic [FEAT_W-1:0]      feat0,
+  output logic [FEAT_W-1:0]      feat1,
+  output logic [FEAT_W-1:0]      feat2,
+  output logic [FEAT_W-1:0]      feat3,
+  output logic [FEAT_W-1:0]      feat4,
+  output logic [FEAT_W-1:0]      feat5,
+  output logic [FEAT_W-1:0]      feat6,
+  output logic [FEAT_W-1:0]      feat7,
+  output logic [8*FEAT_W-1:0]    feat_vec,
+
+  // -----------------------------
+  // optional debug/errors (export)
+  // -----------------------------
+  output logic                   stats_tile_err,
+  output logic [7:0]             stats_err_code,
+  output logic                   err_mismatch_pulse,
+  output logic [31:0]            cnt_join_ok,
+  output logic [31:0]            cnt_mismatch,
+  output logic [31:0]            cnt_drop,
+
+  // coordinates/meta passthrough if you want
+  output logic [X_W-1:0]         x,
+  output logic [Y_W-1:0]         y,
+  output logic [X_W-1:0]         tile_j_dbg,
+  output logic [Y_W-1:0]         tile_i_dbg,
+  output logic [1:0]             x_mod,
+  output logic [1:0]             y_mod,
+  output logic                   tile_first,
+  output logic                   tile_last,
+  output logic                   in_roi,
+  output logic                   err_sof_midframe,
+  output logic                   err_eol_mismatch,
+  output logic [31:0]            frame_cnt,
+  output logic [31:0]            line_cnt
+);
+
+  // ============================================================
+  // Stage A outputs (raw bundle)
+  // ============================================================
+  logic                 v_bundle_valid;
+  logic                 v_bundle_ready;
+
+  logic [SUM_W-1:0]     sumY;
+  logic [YPIX_W-1:0]    minY, maxY, meanY, rangeY;
+
+  logic [EDGE_W-1:0]    edge_sum, edge_max, edge_mean;
+  logic [CNT_W-1:0]     edge_cnt;
+
+  logic [15:0]          y_meta_o_s;
+  logic [15:0]          tile_x_o_s, tile_y_o_s;
+  logic [15:0]          frame_id_o_s;
+
+  logic [$clog2(TILE_W*TILE_H+1)-1:0] stats_pix_cnt_o;
+ 
+    // ============================================================
+  // 2-entry FIFO (burst=2) for paired bundle (atomic consume)
+  //  - Stage A already pairs stats+edge in the same out_valid beat
+  //  - Present v3/v4 together; pop only when BOTH accepted same cycle
+  // ============================================================
+
+  localparam int unsigned FIFO_DEPTH = 2;
+
+  logic [$clog2(FIFO_DEPTH):0] fifo_cnt; // can hold 0..2
+  logic [$clog2(FIFO_DEPTH)-1:0] rd_ptr, wr_ptr;
+
+  wire fifo_full  = (fifo_cnt == FIFO_DEPTH);
+  wire fifo_empty = (fifo_cnt == 0);
+
+  // Upstream (Stage A) handshake
+  assign v_bundle_ready = ~fifo_full;
+  wire push = v_bundle_valid & v_bundle_ready;
+
+  // ------------------------------------------------------------
+  // FIFO storage
+  // ------------------------------------------------------------
+  logic [SUM_W-1:0]  sumY_mem     [FIFO_DEPTH];
+  logic [YPIX_W-1:0] minY_mem     [FIFO_DEPTH];
+  logic [YPIX_W-1:0] maxY_mem     [FIFO_DEPTH];
+  logic [EDGE_W-1:0] edge_sum_mem [FIFO_DEPTH];
+  logic [15:0]       tile_x_mem   [FIFO_DEPTH];
+  logic [15:0]       tile_y_mem   [FIFO_DEPTH];
+
+  // Read current entry
+  wire [SUM_W-1:0]  sumY_q     = sumY_mem[rd_ptr];
+  wire [YPIX_W-1:0] minY_q     = minY_mem[rd_ptr];
+  wire [YPIX_W-1:0] maxY_q     = maxY_mem[rd_ptr];
+  wire [EDGE_W-1:0] edge_sum_q = edge_sum_mem[rd_ptr];
+  wire [15:0]       tile_x_q   = tile_x_mem[rd_ptr];
+  wire [15:0]       tile_y_q   = tile_y_mem[rd_ptr];
+
+  // ------------------------------------------------------------
+  // Downstream (packer) handshake: atomic pair
+  // ------------------------------------------------------------
+  wire v_pair_valid = ~fifo_empty;
+
+  // v3/v4 BOTH valid together (atomic)
+  wire v3_valid = v_pair_valid;
+  wire v4_valid = v_pair_valid;
+
+  // Pop only if BOTH channels accepted in same cycle
+  wire pop = v_pair_valid & v3_ready & v4_ready;
+
+  // ------------------------------------------------------------
+  // FIFO update
+  // ------------------------------------------------------------
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      fifo_cnt <= '0;
+      rd_ptr   <= '0;
+      wr_ptr   <= '0;
+    end else begin
+      case ({push, pop})
+        2'b10: begin // push only
+          sumY_mem[wr_ptr]     <= sumY;
+          minY_mem[wr_ptr]     <= minY;
+          maxY_mem[wr_ptr]     <= maxY;
+          edge_sum_mem[wr_ptr] <= edge_sum;
+          tile_x_mem[wr_ptr]   <= tile_x_o_s;
+          tile_y_mem[wr_ptr]   <= tile_y_o_s;
+
+          wr_ptr   <= wr_ptr + 1'b1;
+          fifo_cnt <= fifo_cnt + 1'b1;
+        end
+
+        2'b01: begin // pop only
+          rd_ptr   <= rd_ptr + 1'b1;
+          fifo_cnt <= fifo_cnt - 1'b1;
+        end
+
+        2'b11: begin // pop + push same cycle (count unchanged)
+          // pop (advance rd)
+          rd_ptr <= rd_ptr + 1'b1;
+
+          // push into wr slot
+          sumY_mem[wr_ptr]     <= sumY;
+          minY_mem[wr_ptr]     <= minY;
+          maxY_mem[wr_ptr]     <= maxY;
+          edge_sum_mem[wr_ptr] <= edge_sum;
+          tile_x_mem[wr_ptr]   <= tile_x_o_s;
+          tile_y_mem[wr_ptr]   <= tile_y_o_s;
+
+          wr_ptr <= wr_ptr + 1'b1;
+        end
+
+        default: begin
+          // 00: nothing
+        end
+      endcase
+    end
+  end
+
+
+  // ============================================================
+  // Stage A instance
+  // ============================================================
+  pix_xy_linebuf_stats_edge_top #(
+    .X_W(X_W),
+    .Y_W(Y_W),
+    .ACTIVE_W(ACTIVE_W),
+    .ACTIVE_H(ACTIVE_H),
+
+    .TILE_SHIFT(TILE_SHIFT),
+    .TILES_X(TILES_X),
+    .TILES_Y(TILES_Y),
+
+    .YPIX_W(YPIX_W),
+
+    .USE_SOF(1'b0),
+    .USE_EOL(1'b0),
+    .USE_EOF(1'b0),
+    .ADVANCE_ON_VALID_ONLY(1'b1),
+
+    .SAT_AT_MAX(SAT_AT_MAX),
+
+
+    .ROI_EN_DEFAULT(ROI_EN_DEFAULT),
+    .ROI_X0_DEFAULT(ROI_X0_DEFAULT),
+    .ROI_Y0_DEFAULT(ROI_Y0_DEFAULT),
+    .ROI_X1_DEFAULT(ROI_X1_DEFAULT),
+    .ROI_Y1_DEFAULT(ROI_Y1_DEFAULT),
+
+    .DBG_COUNTERS_EN(DBG_COUNTERS_EN),
+
+    .TILE_W(TILE_W),
+    .TILE_H(TILE_H),
+
+    .SUPPORT_PIX_VALID_STATS(SUPPORT_PIX_VALID_STATS),
+    .DO_SUMSQ_STATS(DO_SUMSQ_STATS),
+    .ASSERT_ON_STATS(ASSERT_ON_STATS),
+
+    .SUPPORT_PIX_VALID_EDGE(SUPPORT_PIX_VALID_EDGE),
+    .SUPPORT_TILE_START_EDGE(SUPPORT_TILE_START_EDGE),
+    .ASSERT_ON_EDGE(ASSERT_ON_EDGE),
+
+    .EDGE_MODE(EDGE_MODE),
+    .EDGE_THR(EDGE_THR),
+    .EDGE_W(EDGE_W),
+    .CNT_W(CNT_W),
+
+    .TILE_PIXELS(TILE_PIXELS),
+    .SUM_MAX(SUM_MAX),
+    .SUM_W(SUM_W),
+    .SUMSQ_MAX(SUMSQ_MAX),
+    .SUMSQ_W(SUMSQ_W)
+  ) u_stats_edge (
+    .clk(clk),
+    .rst(rst),
+    .en(en),
+
+    .pix_valid(pix_valid),
+    .pix_ready(pix_ready),
+    .sof(sof),
+    .eol(eol),
+    .eof(eof),
+    .y_in(y_in),
+
+    .out_valid(v_bundle_valid),
+    .out_ready(v_bundle_ready),
+
+    .sumY(sumY),
+    .minY(minY),
+    .maxY(maxY),
+    .meanY(meanY),
+    .rangeY(rangeY),
+
+    .stats_tile_err(stats_tile_err),
+    .stats_err_code(stats_err_code),
+    .stats_pix_cnt_o(stats_pix_cnt_o),
+
+    .y_meta_o(y_meta_o_s),
+    .tile_x_o(tile_x_o_s),
+    .tile_y_o(tile_y_o_s),
+    .frame_id_o(frame_id_o_s),
+
+    .edge_sum(edge_sum),
+    .edge_max(edge_max),
+    .edge_cnt(edge_cnt),
+    .edge_mean(edge_mean),
+
+    .x(x),
+    .y(y),
+
+    .tile_j(tile_j_dbg),
+    .tile_i(tile_i_dbg),
+    .x_mod(x_mod),
+    .y_mod(y_mod),
+
+    .tile_first(tile_first),
+    .tile_last(tile_last),
+    .in_roi(in_roi),
+
+    .err_sof_midframe(err_sof_midframe),
+    .err_eol_mismatch(err_eol_mismatch),
+    .frame_cnt(frame_cnt),
+    .line_cnt(line_cnt)
+  );
+
+
+  // ============================================================
+  // FIFO payload regs + packer handshake wires (MUST declare)
+  // ============================================================
+
+
+  logic v3_ready, v4_ready;
+
+
+  wire [TILE_I_W-1:0] ti_now = tile_y_q[TILE_I_W-1:0];
+  wire [TILE_J_W-1:0] tj_now = tile_x_q[TILE_J_W-1:0];
+
+  feature_pack_and_valid #(
+    .TILES_X(TILES_X),
+    .TILES_Y(TILES_Y),
+
+    .SUM_W(SUM_W),
+    .Y_W(YPIX_W),
+    .EDGE_W(EDGE_W),
+
+    .FEAT_W(FEAT_W),
+    .FEAT_DIM(FEAT_DIM),
+
+    .EDGE_USE_MEAN(EDGE_USE_MEAN),
+
+    .TILE_PIX_SHIFT(TILE_PIX_SHIFT),
+    .TILE_PIX_N(TILE_PIX_N),
+    .MEAN_MODE_SHIFT(MEAN_MODE_SHIFT),
+
+    .MATCH_MODE_BUFFERED(MATCH_MODE_BUFFERED),
+    .ZERO_WHEN_INVALID(ZERO_WHEN_INVALID),
+
+    .FEAT0_SHIFT(FEAT0_SHIFT),
+    .FEAT1_SHIFT(FEAT1_SHIFT),
+    .FEAT2_SHIFT(FEAT2_SHIFT),
+    .FEAT3_SHIFT(FEAT3_SHIFT),
+    .FEAT0_BIAS(FEAT0_BIAS),
+    .FEAT1_BIAS(FEAT1_BIAS),
+    .FEAT2_BIAS(FEAT2_BIAS),
+    .FEAT3_BIAS(FEAT3_BIAS),
+    .FEAT_CLAMP_MAX(FEAT_CLAMP_MAX),
+
+    .TILE_I_W(TILE_I_W),
+    .TILE_J_W(TILE_J_W),
+    .TILE_ID_W(TILE_ID_W),
+
+    .ENABLE_CNTS(ENABLE_CNTS)
+  ) u_pack (
+    .clk(clk),
+    .rst(rst),
+
+    // v3: stats
+    .v3_valid(v3_valid),
+    .v3_ready(v3_ready),
+    .sumY(sumY_q),
+    .minY(minY_q),
+    .maxY(maxY_q),
+    .tile_i(ti_now),
+    .tile_j(tj_now),
+
+    // v4: edge
+    .v4_valid(v4_valid),
+    .v4_ready(v4_ready),
+    .edge_sum(edge_sum_q),
+    .v4_tile_i(ti_now),
+    .v4_tile_j(tj_now),
+
+    // output
+    .feat_valid(feat_valid),
+    .feat_ready(feat_ready),
+
+    .tile_i_o(tile_i_o),
+    .tile_j_o(tile_j_o),
+    .tile_id_o(tile_id_o),
+
+    .feat0(feat0),
+    .feat1(feat1),
+    .feat2(feat2),
+    .feat3(feat3),
+    .feat4(feat4),
+    .feat5(feat5),
+    .feat6(feat6),
+    .feat7(feat7),
+    .feat_vec(feat_vec),
+
+    .err_mismatch_pulse(err_mismatch_pulse),
+    .cnt_join_ok(cnt_join_ok),
+    .cnt_mismatch(cnt_mismatch),
+    .cnt_drop(cnt_drop)
+  );
+
+endmodule
+
+`default_nettype wire
+
+
+
+
+
+
+
+
+
+
+
+
+`timescale 1ns/1ps
+`default_nettype none
+module tile_addr_gen#(
+    parameter int unsigned tile_x=320,
+    parameter int unsigned tile_y=180,
+    parameter int unsigned sram_bus=32,
+    parameter int unsigned feat_dim=8,
+    parameter int unsigned elen_W=32
+)
+(
+    input logic [$clog2(tile_y)-1:0] tile_i,
+    input logic [$clog2(tile_x)-1:0] tile_j,
+    output logic [$clog2(tile_x*tile_y)-1:0] tile_id,
+    output logic [$clog2(tile_x*tile_y*(feat_dim*elen_W+sram_bus-1)/sram_bus)-1:0] sram_addr
+);
+    //local params
+    localparam int unsigned feat_bits = feat_dim * elen_W;
+    localparam int unsigned feat_sram_words = (feat_bits + sram_bus - 1) / sram_bus; //ceil division
+    //tile id width
+    localparam int unsigned tile_id_W = $clog2(tile_x * tile_y);
+    //sram addr width
+    localparam int unsigned sram_addr_W = $clog2(tile_x * tile_y * feat_sram_words);
+    //clamp util
+    function automatic logic [$clog2(tile_y)-1:0]clamp_i(input logic [$clog2(tile_y)-1:0] in);
+        if(in>tile_y[$clog2(tile_y)-1:0]-1)
+            return tile_y[$clog2(tile_y)-1:0]-1;
+        else
+            return in;
+    endfunction
+    function automatic logic [$clog2(tile_x)-1:0]clamp_j(input logic [$clog2(tile_x)-1:0] in);
+        if(in>tile_x[$clog2(tile_x)-1:0]-1)
+            return tile_x[$clog2(tile_x)-1:0]-1;
+        else
+            return in;
+    endfunction
+    //combinational address generation
+    logic [$clog2(tile_y)-1:0] tile_i_clamped;
+    logic [$clog2(tile_x)-1:0] tile_j_clamped;
+    //usee wider temporary signals to avoid overflow durning  multiplication and add
+    logic [$clog2(tile_x*tile_y)-1:0] tile_id_tmp;
+    logic [$clog2(tile_x*tile_y*feat_sram_words)-1:0] sram_addr_tmp;
+    always@(*)begin
+        tile_i_clamped = clamp_i(tile_i);
+        tile_j_clamped = clamp_j(tile_j);
+        tile_id_tmp = tile_i_clamped * tile_x + tile_j_clamped;
+        sram_addr_tmp = tile_id_tmp * feat_sram_words;
+        tile_id = tile_id_tmp;
+        sram_addr = sram_addr_tmp[sram_addr_W-1:0];
+    end 
+endmodule
+`default_nettype wire
+ 
+
+`timescale 1ns/1ps
+`default_nettype none
+ module burst_req_if#(
+    parameter int unsigned tile_x=320,
+    parameter int unsigned tile_y=180,
+    parameter int unsigned sram_bus=32,
+    parameter int unsigned feat_dim=8,
+    parameter int unsigned elen_W=32,
+    parameter int unsigned tag_w=16,
+    parameter bit isclamp=1'b0,//zero for unclamped, one for clamped  
+    parameter int unsigned FEAT_BITS_P= feat_dim * elen_W,
+    parameter int unsigned WORDS_PER_FEAT_P = (FEAT_BITS_P + sram_bus - 1) / sram_bus,
+    parameter int unsigned TOTAL_WORDS_P    = tile_x * tile_y * WORDS_PER_FEAT_P,
+    parameter int unsigned MEM_AW           = (TOTAL_WORDS_P <= 1) ? 1 : $clog2(TOTAL_WORDS_P)
+ )(
+    input clk,
+    input rst,
+    //feature write request
+    input logic valid_wr,
+    output logic ready_wr,
+    input logic [$clog2(tile_y)-1:0] tile_i_wr,
+    input logic [$clog2(tile_x)-1:0] tile_j_wr,
+    input logic [feat_dim*elen_W-1:0] feat_in,
+    //feature read request from neigh_fwetch
+    input logic valid_rd,
+    output logic ready_rd,
+    input logic [$clog2(tile_y)-1:0] tile_i_rd,
+    input logic [$clog2(tile_x)-1:0] tile_j_rd,
+    input logic [tag_w-1:0] tag_rd,
+    //internal sram interface for burst engine
+    output logic req_valid,
+    input logic  req_ready, 
+    output logic req_is_wr, //1 for write, 0 for read
+    output logic [MEM_AW-1:0] sram_addr,
+    output logic [feat_dim*elen_W-1:0] sram_wdata,  
+    output logic [tag_w-1:0] sram_tag,
+    input  logic                  use_ext_addr,
+    input  logic [MEM_AW-1:0]      ext_base_addr
+ );
+    //localparams
+    localparam int unsigned FEAT_BITS = FEAT_BITS_P;
+    localparam int unsigned WORDS_PER_FEAT = WORDS_PER_FEAT_P;
+    //clamp for power 2
+    function automatic logic [$clog2(tile_y)-1:0]clamp_i(input logic [$clog2(tile_y)-1:0] in);
+        if(isclamp) begin
+            if(in>tile_y[$clog2(tile_y)-1:0]-1)
+                return tile_y[$clog2(tile_y)-1:0]-1;
+            else
+                return in;
+        end
+        else begin
+            return in;
+        end
+    endfunction
+    function automatic logic [$clog2(tile_x)-1:0]clamp_j(input logic [$clog2(tile_x)-1:0] in);
+        if(isclamp) begin
+            if(in>tile_x[$clog2(tile_x)-1:0]-1)
+                return tile_x[$clog2(tile_x)-1:0]-1;
+            else
+                return in;
+        end
+        else begin
+            return in;
+        end
+    endfunction
+    //arbitation between read and write for one deep pending request
+    logic pending_valid;
+    logic pending_is_wr;
+    logic [MEM_AW-1:0] pending_addr;
+    logic [FEAT_BITS-1:0] pending_wdata;
+    logic [tag_w-1:0] pending_tag;
+    //arbitation logic write priority
+    logic take_wr, take_rd;
+    always_comb begin
+        take_wr = 1'b0;
+        take_rd = 1'b0;
+        //ready when no pending and write has higher priority
+        ready_wr = ~pending_valid;
+        ready_rd = ~pending_valid&~valid_wr;
+        if(~pending_valid) begin
+            if(valid_wr) begin
+                take_wr = 1'b1;
+            end
+            else if(valid_rd) begin
+                take_rd = 1'b1;
+            end
+        end
+    end
+    
+    //address cal for selected request
+    //write address=TILE_ID*WORDS_PER_FEAT
+    //TILE_ID= tile_i*tile_x + tile_j
+    logic [$clog2(tile_y)-1:0] tile_i_sel;
+    logic [$clog2(tile_x)-1:0] tile_j_sel;
+    logic [31:0]               tile_id_u;
+    logic [MEM_AW+31:0]        addr_calc_u;
+    always_comb begin
+        if(take_wr) begin
+            tile_i_sel = clamp_i(tile_i_wr);
+            tile_j_sel = clamp_j(tile_j_wr);
+        end
+        else begin
+            tile_i_sel = clamp_i(tile_i_rd);
+            tile_j_sel = clamp_j(tile_j_rd);
+        end
+        tile_id_u    = (tile_i_sel * tile_x) + tile_j_sel;
+        addr_calc_u  = tile_id_u * WORDS_PER_FEAT;
+    end
+    logic [MEM_AW-1:0] addr_sel;
+    logic [MEM_AW+31:0] addr_calc;
+    assign addr_sel = addr_calc_u[MEM_AW-1:0];
+
+    //pending register
+    always_ff @(posedge clk) begin
+        if(rst) begin
+            pending_valid <= 1'b0;
+            pending_is_wr <= 1'b0;
+            pending_addr  <= '0;
+            pending_wdata <= '0;
+            pending_tag   <= '0;
+        end
+        else begin
+            if(pending_valid & req_ready) begin
+                pending_valid <= 1'b0;
+            end
+            if(~pending_valid) begin
+                if(take_wr) begin
+                    pending_valid <= 1'b1;
+                    pending_is_wr <= 1'b1;
+                    pending_addr <= (use_ext_addr) ? ext_base_addr : addr_sel;
+                    pending_wdata <= feat_in;
+                    pending_tag   <= '0;
+                end
+                else if(take_rd) begin
+                    pending_valid <= 1'b1;
+                    pending_is_wr <= 1'b0;
+                    pending_addr <= (use_ext_addr) ? ext_base_addr : addr_sel;
+                    pending_wdata <= '0;
+                    pending_tag   <= tag_rd;
+                end
+            end
+        end
+    end
+    //output assignment
+    assign req_valid  = pending_valid;
+    assign req_is_wr  = pending_is_wr;
+    assign sram_addr  = pending_addr;
+    assign sram_wdata = pending_wdata;
+    assign sram_tag   = pending_tag;
+
+ endmodule
+ `default_nettype wire  
+`timescale 1ns/1ps
+`default_nettype none
+
+module burst_req_if_tileaddr_wrap #(
+  parameter int unsigned tile_x   = 320,
+  parameter int unsigned tile_y   = 180,
+  parameter int unsigned sram_bus = 32,
+  parameter int unsigned feat_dim = 8,
+  parameter int unsigned elen_W   = 32,
+  parameter int unsigned tag_w    = 16,
+  parameter bit          isclamp  = 1'b0,
+
+  parameter int unsigned FEAT_BITS_P      = feat_dim * elen_W,
+  parameter int unsigned WORDS_PER_FEAT_P = (FEAT_BITS_P + sram_bus - 1) / sram_bus,
+  parameter int unsigned TOTAL_WORDS_P    = tile_x * tile_y * WORDS_PER_FEAT_P,
+  parameter int unsigned MEM_AW           = (TOTAL_WORDS_P <= 1) ? 1 : $clog2(TOTAL_WORDS_P)
+)(
+  input  logic clk,
+  input  logic rst,
+
+  // write req
+  input  logic                    valid_wr,
+  output logic                    ready_wr,
+  input  logic [$clog2(tile_y)-1:0] tile_i_wr,
+  input  logic [$clog2(tile_x)-1:0] tile_j_wr,
+  input  logic [feat_dim*elen_W-1:0] feat_in,
+
+  // read req
+  input  logic                    valid_rd,
+  output logic                    ready_rd,
+  input  logic [$clog2(tile_y)-1:0] tile_i_rd,
+  input  logic [$clog2(tile_x)-1:0] tile_j_rd,
+  input  logic [tag_w-1:0]        tag_rd,
+
+  // to burst_engine
+  output logic                    req_valid,
+  input  logic                    req_ready,
+  output logic                    req_is_wr,
+  output logic [MEM_AW-1:0]       sram_addr,
+  output logic [feat_dim*elen_W-1:0] sram_wdata,
+  output logic [tag_w-1:0]        sram_tag
+);
+
+  // ------------------------------------------------------------
+  // 1) 先做 arbitration 選出「這一拍要吃的 tile_i/tile_j」
+  //    （規則要跟 burst_req_if 一致：write priority, pending_valid 時不吃新的）
+  // ------------------------------------------------------------
+  logic pending_valid_mirror;
+  logic take_wr, take_rd;
+
+  // 這裡用與 burst_req_if 同樣條件推導「本拍是否會 take」
+  // 注意：真正 pending_valid 在 burst_req_if 裡，但 wrapper 也要知道何時選地址
+  // => 最簡單：直接用 burst_req_if 的 ready_wr/ready_rd 來判斷可否 take
+  // ready_wr=~pending_valid, ready_rd=~pending_valid & ~valid_wr
+  // 所以：
+  always_comb begin
+    take_wr = valid_wr && ready_wr;
+    take_rd = valid_rd && ready_rd;
+  end
+
+  logic [$clog2(tile_y)-1:0] tile_i_sel;
+  logic [$clog2(tile_x)-1:0] tile_j_sel;
+
+  always_comb begin
+    if (take_wr) begin
+      tile_i_sel = tile_i_wr;
+      tile_j_sel = tile_j_wr;
+    end else begin
+      tile_i_sel = tile_i_rd;
+      tile_j_sel = tile_j_rd;
+    end
+  end
+
+  // ------------------------------------------------------------
+  // 2) tile_addr_gen instance：算 base_addr（word address）
+  // ------------------------------------------------------------
+  logic [$clog2(tile_x*tile_y)-1:0] tile_id_unused;
+  logic [$clog2(tile_x*tile_y*WORDS_PER_FEAT_P)-1:0] base_addr_wide;
+
+  tile_addr_gen #(
+    .tile_x(tile_x),
+    .tile_y(tile_y),
+    .sram_bus(sram_bus),
+    .feat_dim(feat_dim),
+    .elen_W(elen_W)
+  ) u_addr (
+    .tile_i(tile_i_sel),
+    .tile_j(tile_j_sel),
+    .tile_id(tile_id_unused),
+    .sram_addr(base_addr_wide)
+  );
+
+  wire [MEM_AW-1:0] base_addr = base_addr_wide[MEM_AW-1:0];
+
+  // ------------------------------------------------------------
+  // 3) burst_req_if instance：用 ext_base_addr 覆蓋內建位址計算
+  // ------------------------------------------------------------
+  burst_req_if #(
+    .tile_x(tile_x),
+    .tile_y(tile_y),
+    .sram_bus(sram_bus),
+    .feat_dim(feat_dim),
+    .elen_W(elen_W),
+    .tag_w(tag_w),
+    .isclamp(isclamp),
+    .FEAT_BITS_P(FEAT_BITS_P),
+    .WORDS_PER_FEAT_P(WORDS_PER_FEAT_P),
+    .TOTAL_WORDS_P(TOTAL_WORDS_P),
+    .MEM_AW(MEM_AW)
+  ) u_req (
+    .clk(clk),
+    .rst(rst),
+
+    .valid_wr(valid_wr),
+    .ready_wr(ready_wr),
+    .tile_i_wr(tile_i_wr),
+    .tile_j_wr(tile_j_wr),
+    .feat_in(feat_in),
+
+    .valid_rd(valid_rd),
+    .ready_rd(ready_rd),
+    .tile_i_rd(tile_i_rd),
+    .tile_j_rd(tile_j_rd),
+    .tag_rd(tag_rd),
+
+    .req_valid(req_valid),
+    .req_ready(req_ready),
+    .req_is_wr(req_is_wr),
+    .sram_addr(sram_addr),
+    .sram_wdata(sram_wdata),
+    .sram_tag(sram_tag),
+
+    .use_ext_addr(1'b1),
+    .ext_base_addr(base_addr)
+  );
+
+endmodule
+
+`default_nettype wire
+
+
+
+
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module burst_engine #(
+    parameter int unsigned SRAM_BUS_W     = 32,
+    parameter int unsigned MEM_AW         = 18,
+    parameter int unsigned FEAT_W         = 256,
+    parameter int unsigned WORDS_PER_FEAT = 8,
+    parameter int unsigned TAG_W          = 16,
+
+    parameter int unsigned REQ_DEPTH  = 2,
+    parameter int unsigned META_DEPTH = 16,
+    parameter int unsigned BEAT_DEPTH = 16
+)(
+    input  logic clk,
+    input  logic rst,
+
+    // request
+    input  logic               req_valid,
+    output logic               req_ready,
+    input  logic               req_is_wr,
+    input  logic [FEAT_W-1:0]  req_wdata,
+    input  logic [TAG_W-1:0]   req_tag,
+    input  logic [MEM_AW-1:0]  req_addr,
+
+    // memory command
+    output logic               mem_req_valid,
+    input  logic               mem_req_ready,
+    output logic               mem_req_is_wr,
+    output logic [MEM_AW-1:0]  mem_req_addr,
+    output logic [SRAM_BUS_W-1:0] mem_req_wdata,
+    output logic [SRAM_BUS_W/8-1:0] mem_req_wmask,
+
+    // memory read return
+    input  logic               mem_rvalid,
+    input  logic [SRAM_BUS_W-1:0] mem_rdata,
+
+    // beat output
+    output logic               beat_out_valid,
+    input  logic               beat_out_ready,
+    output logic [SRAM_BUS_W-1:0] beat_out_data,
+    output logic [TAG_W-1:0]      beat_out_tag,
+    output logic [$clog2(WORDS_PER_FEAT)-1:0] beat_out_idx
+  );
+
+    localparam int BEAT_IDX_W = (WORDS_PER_FEAT <= 1) ? 1 : $clog2(WORDS_PER_FEAT);
+
+    // ============================================================
+    // 1) Request FIFO (flattened)
+    // ============================================================
+    logic req_is_wr_q [0:REQ_DEPTH-1];
+    logic [TAG_W-1:0]  req_tag_q [0:REQ_DEPTH-1];
+    logic [MEM_AW-1:0] req_addr_q[0:REQ_DEPTH-1];
+    logic [FEAT_W-1:0] req_data_q[0:REQ_DEPTH-1];
+    logic [BEAT_IDX_W-1:0] rd_resp_idx;
+    logic [$clog2(REQ_DEPTH)-1:0] req_wptr, req_rptr;
+    logic [$clog2(REQ_DEPTH+1)-1:0] req_cnt;
+
+    assign req_ready = (req_cnt < REQ_DEPTH);
+
+    // current request
+    logic cur_valid;
+    logic cur_is_wr;
+    logic [TAG_W-1:0]  cur_tag;
+    logic [MEM_AW-1:0] cur_addr;
+    logic [FEAT_W-1:0] cur_data;
+    logic [BEAT_IDX_W-1:0] cur_beat;
+  
+    // ============================================================
+    // 2) META FIFO (tag + beat_idx)
+    // ============================================================
+    logic [TAG_W-1:0]      meta_tag [0:META_DEPTH-1];
+    logic [BEAT_IDX_W-1:0] meta_idx [0:META_DEPTH-1];
+    logic [$clog2(META_DEPTH)-1:0] meta_wptr, meta_rptr;
+    logic [$clog2(META_DEPTH+1)-1:0] meta_cnt;
+
+    wire meta_full  = (meta_cnt == META_DEPTH);
+    wire meta_empty = (meta_cnt == 0);
+
+    // ============================================================
+    // 3) BEAT FIFO
+    // ============================================================
+    logic [TAG_W-1:0]      beat_tag_q [0:BEAT_DEPTH-1];
+    logic [BEAT_IDX_W-1:0] beat_idx_q [0:BEAT_DEPTH-1];
+    logic [SRAM_BUS_W-1:0] beat_data_q[0:BEAT_DEPTH-1];
+
+    logic [$clog2(BEAT_DEPTH)-1:0] beat_wptr, beat_rptr;
+    logic [$clog2(BEAT_DEPTH+1)-1:0] beat_cnt;
+
+    wire beat_full  = (beat_cnt == BEAT_DEPTH);
+    wire beat_empty = (beat_cnt == 0);
+
+    // ============================================================
+    // helpers
+    // ============================================================
+    function automatic [SRAM_BUS_W-1:0] get_word;
+      input [FEAT_W-1:0] feat;
+      input [BEAT_IDX_W-1:0] idx;
+      begin
+          get_word = feat >> (idx * SRAM_BUS_W);
+      end
+    endfunction
+    always_ff @(posedge clk) begin
+        if(rst)begin
+            rd_resp_idx <= 0;
+        end else if(!cur_valid) begin
+            rd_resp_idx <= 0;
+        end
+    end
+    // ============================================================
+    // Request FIFO + current request
+    // ============================================================
+    wire req_push = req_valid && req_ready;
+    wire req_pop_to_cur = (!cur_valid) && (req_cnt != 0);
+
+    function automatic [$clog2(REQ_DEPTH)-1:0] inc_req_ptr(input [$clog2(REQ_DEPTH)-1:0] p);
+        if (p == REQ_DEPTH-1) inc_req_ptr = '0;
+        else                 inc_req_ptr = p + 1'b1;
+    endfunction
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            req_wptr <= '0;
+            req_rptr <= '0;
+            req_cnt  <= '0;
+            cur_valid<= 1'b0;
+            cur_beat <= '0;
+        end else begin
+            if (req_push) begin
+                req_is_wr_q[req_wptr] <= req_is_wr;
+                req_tag_q [req_wptr]  <= req_tag;
+                req_addr_q[req_wptr]  <= req_addr;
+                req_data_q[req_wptr]  <= req_wdata;
+                req_wptr <= inc_req_ptr(req_wptr);
+            end
+
+            if (req_pop_to_cur) begin
+                cur_is_wr <= req_is_wr_q[req_rptr];
+                cur_tag   <= req_tag_q [req_rptr];
+                cur_addr  <= req_addr_q[req_rptr];
+                cur_data  <= req_data_q[req_rptr];
+                cur_valid <= 1'b1;
+                cur_beat  <= '0;
+                req_rptr  <= inc_req_ptr(req_rptr);
+            end
+
+            // cnt update (single assignment)
+            case ({req_push, req_pop_to_cur})
+                2'b10: req_cnt <= req_cnt + 1'b1;
+                2'b01: req_cnt <= req_cnt - 1'b1;
+                default: req_cnt <= req_cnt; // 00 or 11 => unchanged
+            endcase
+
+            // advance beat (同你原本)
+            if (cur_valid && mem_req_valid && mem_req_ready) begin
+                if (cur_beat == WORDS_PER_FEAT-1) cur_valid <= 1'b0;
+                else                              cur_beat  <= cur_beat + 1'b1;
+            end
+        end
+    end
+
+
+    // ============================================================
+    // Memory command
+    // ============================================================
+    assign mem_req_valid = cur_valid && (cur_is_wr || !meta_full);
+    assign mem_req_is_wr = cur_is_wr;
+    assign mem_req_addr  = cur_addr + cur_beat;
+    assign mem_req_wdata = get_word(cur_data, cur_beat);
+    assign mem_req_wmask = {SRAM_BUS_W/8{1'b1}};
+
+    // ============================================================
+    // META FIFO push/pop  (single-driver fix)
+    // ============================================================
+    wire meta_push = mem_req_valid && mem_req_ready && cur_valid && !cur_is_wr;
+
+    // 只有當真的把 rdata 吃進 beat_fifo 時，才 pop meta
+    wire meta_pop  = mem_rvalid && !beat_full && !meta_empty; // same as beat_push
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            meta_wptr <= 0;
+            meta_rptr <= 0;
+            meta_cnt  <= 0;
+        end else begin
+            // push only
+            if (meta_push && !meta_pop) begin
+                meta_tag[meta_wptr] <= cur_tag;
+                meta_idx[meta_wptr] <= cur_beat;
+                meta_wptr <= (meta_wptr + 1) % META_DEPTH;
+                meta_cnt  <= meta_cnt + 1;
+            end
+            // pop only
+            else if (!meta_push && meta_pop) begin
+                meta_rptr <= (meta_rptr + 1) % META_DEPTH;
+                meta_cnt  <= meta_cnt - 1;
+            end
+            // push+pop same cycle
+            else if (meta_push && meta_pop) begin
+                meta_tag[meta_wptr] <= cur_tag;
+                meta_idx[meta_wptr] <= cur_beat;
+                meta_wptr <= (meta_wptr + 1) % META_DEPTH;
+                meta_rptr <= (meta_rptr + 1) % META_DEPTH;
+            end
+        end
+    end
+
+
+    // ============================================================
+    // BEAT FIFO push/pop
+    // ============================================================
+    wire beat_push = mem_rvalid && !beat_full && !meta_empty;
+    wire beat_pop  = beat_out_valid && beat_out_ready;
+
+
+    function automatic [$clog2(BEAT_DEPTH)-1:0] inc_beat_ptr(input [$clog2(BEAT_DEPTH)-1:0] p);
+        if (p == BEAT_DEPTH-1) inc_beat_ptr = '0;
+        else                  inc_beat_ptr = p + 1'b1;
+    endfunction
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            beat_wptr <= '0;
+            beat_rptr <= '0;
+            beat_cnt  <= '0;
+        end else begin
+            if (beat_push) begin
+                beat_tag_q [beat_wptr]  <= meta_tag[meta_rptr];
+                beat_idx_q [beat_wptr]  <= meta_idx[meta_rptr]; // << 用 meta_idx，不要用 rd_resp_idx
+                beat_data_q[beat_wptr]  <= mem_rdata;
+                beat_wptr <= inc_beat_ptr(beat_wptr);
+            end
+            if (beat_pop) 
+                beat_rptr <= inc_beat_ptr(beat_rptr);
+
+            case ({beat_push, beat_pop})
+                2'b10: beat_cnt <= beat_cnt + 1'b1;
+                2'b01: beat_cnt <= beat_cnt - 1'b1;
+                default: beat_cnt <= beat_cnt; // 00 or 11
+            endcase
+        end
+    end
+
+
+    // ============================================================
+    // Output
+    // ============================================================
+    assign beat_out_valid = !beat_empty;
+    assign beat_out_tag   = beat_tag_q [beat_rptr];
+    assign beat_out_idx   = beat_idx_q [beat_rptr];
+    assign beat_out_data  = beat_data_q[beat_rptr];
+
+endmodule
+
+`default_nettype wire
+
+
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module rd_assemble_fifo #(
+  parameter int unsigned SRAM_BUS_W   = 32,
+  parameter int unsigned FEAT_W       = 256,
+  parameter int unsigned WORDS_PER_FEAT= 8,
+  parameter int unsigned TAG_W        = 16,
+  parameter int unsigned FIFO_DEPTH   = 2   // 1..N
+)(
+  input  logic clk,
+  input  logic rst,
+
+  // ---------- Beats in ----------
+  input  logic               beat_valid,
+  output logic               beat_ready,
+  input  logic [TAG_W-1:0]   beat_tag,
+  input  logic [$clog2(WORDS_PER_FEAT)-1:0] beat_idx,
+  input  logic [SRAM_BUS_W-1:0] beat_data,
+
+  // ---------- Feature out ----------
+  output logic               feat_out_valid,
+  input  logic               feat_out_ready,
+  output logic [TAG_W-1:0]   feat_out_tag,
+  output logic [FEAT_W-1:0]  feat_out_data
+);
+
+  // -----------------------------
+  // localparams / types
+  // -----------------------------
+  localparam int unsigned IDX_W = (WORDS_PER_FEAT <= 1) ? 1 : $clog2(WORDS_PER_FEAT);
+  localparam int unsigned FIFO_AW = (FIFO_DEPTH <= 1) ? 1 : $clog2(FIFO_DEPTH);
+
+  // sanity (optional)
+  // synthesis translate_off
+  initial begin
+    if (FEAT_W != WORDS_PER_FEAT * SRAM_BUS_W) begin
+      $display("WARN: FEAT_W (%0d) != WORDS_PER_FEAT*SRAM_BUS_W (%0d). Packing will still shift by SRAM_BUS_W.",
+               FEAT_W, WORDS_PER_FEAT*SRAM_BUS_W);
+    end
+    if (FIFO_DEPTH < 1) begin
+      $display("ERROR: FIFO_DEPTH must be >= 1");
+      $finish;
+    end
+  end
+  // synthesis translate_on
+
+  // -----------------------------
+  // 1) Assembler state
+  // -----------------------------
+  logic assembling;
+  logic [TAG_W-1:0]  cur_tag;
+  logic [FEAT_W-1:0] cur_feat;
+  logic [WORDS_PER_FEAT-1:0] seen_mask;
+
+  wire all_seen = &seen_mask;
+
+  // write one beat into feature vector
+  function automatic [FEAT_W-1:0] put_word(
+    input [FEAT_W-1:0] feat,
+    input [IDX_W-1:0]  idx,
+    input [SRAM_BUS_W-1:0] w
+  );
+    reg [FEAT_W-1:0] tmp;
+    int unsigned sh;
+    begin
+      tmp = feat;
+      sh  = idx * SRAM_BUS_W;
+
+      // place SRAM_BUS_W bits at position sh
+      // (works when FEAT_W >= WORDS_PER_FEAT*SRAM_BUS_W; if smaller, upper bits truncate)
+      tmp = tmp & ~({{(FEAT_W-SRAM_BUS_W){1'b0}}, {SRAM_BUS_W{1'b1}}} << sh);
+      tmp = tmp | ({{(FEAT_W-SRAM_BUS_W){1'b0}}, w} << sh);
+
+      put_word = tmp;
+    end
+  endfunction
+
+  // -----------------------------
+  // 2) Small output FIFO
+  // -----------------------------
+  logic [TAG_W-1:0]  fifo_tag  [0:FIFO_DEPTH-1];
+  logic [FEAT_W-1:0] fifo_data [0:FIFO_DEPTH-1];
+
+  logic [FIFO_AW-1:0] wptr, rptr;
+  logic [$clog2(FIFO_DEPTH+1)-1:0] cnt;
+
+  wire fifo_full  = (cnt == FIFO_DEPTH);
+  wire fifo_empty = (cnt == 0);
+
+  // output side
+  assign feat_out_valid = !fifo_empty;
+  assign feat_out_tag   = fifo_tag[rptr];
+  assign feat_out_data  = fifo_data[rptr];
+
+  wire fifo_pop  = feat_out_valid && feat_out_ready;
+  wire fifo_push; // defined later when assembled done && space available
+
+  // pointer increment helper (avoid % issues)
+  function automatic [FIFO_AW-1:0] inc_ptr(input [FIFO_AW-1:0] p);
+    if (FIFO_DEPTH <= 1) inc_ptr = '0;
+    else if (p == FIFO_DEPTH-1) inc_ptr = '0;
+    else inc_ptr = p + 1'b1;
+  endfunction
+
+  // -----------------------------
+  // Beat backpressure rule
+  // -----------------------------
+  // We only need to stall beats when:
+  // - we just completed a feature (all_seen after accepting this beat)
+  //   AND fifo is full (can't push assembled feature)
+  //
+  // Otherwise, accept beats freely to avoid stalling SRAM returns.
+  wire will_complete = assembling
+                       && (beat_valid)
+                       && (seen_mask[beat_idx] == 1'b0) // new idx
+                       && ((seen_mask | ({{(WORDS_PER_FEAT-1){1'b0}},1'b1} << beat_idx)) == {WORDS_PER_FEAT{1'b1}});
+
+  assign beat_ready = !rst && !(will_complete && fifo_full);
+
+  // define fifo_push when we actually accept a beat that completes the feature
+  wire beat_fire = beat_valid && beat_ready;
+
+  assign fifo_push = beat_fire && assembling
+                     && ( (seen_mask | ({{(WORDS_PER_FEAT-1){1'b0}},1'b1} << beat_idx)) == {WORDS_PER_FEAT{1'b1}} )
+                     && !fifo_full;
+
+  // -----------------------------
+  // 3) Main sequential logic
+  // -----------------------------
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      assembling <= 1'b0;
+      cur_tag    <= '0;
+      cur_feat   <= '0;
+      seen_mask  <= '0;
+
+      wptr <= '0;
+      rptr <= '0;
+      cnt  <= '0;
+    end else begin
+      // -------------------------
+      // FIFO pop
+      // -------------------------
+      if (fifo_pop) begin
+        rptr <= inc_ptr(rptr);
+      end
+
+      // cnt update for pop/push (single assignment)
+      case ({fifo_push, fifo_pop})
+        2'b10: cnt <= cnt + 1'b1;
+        2'b01: cnt <= cnt - 1'b1;
+        default: cnt <= cnt;
+      endcase
+
+      // -------------------------
+      // Assembler: start / accept beats
+      // -------------------------
+      if (!assembling) begin
+        // start assembling on first accepted beat
+        if (beat_fire) begin
+          assembling <= 1'b1;
+          cur_tag    <= beat_tag;
+          cur_feat   <= put_word('0, beat_idx, beat_data);
+          seen_mask  <= ({{(WORDS_PER_FEAT-1){1'b0}},1'b1} << beat_idx);
+
+          // if single-beat feature (WORDS_PER_FEAT==1), push immediately
+          if (WORDS_PER_FEAT == 1) begin
+            // push happens via fifo_push combinational; but WORDS_PER_FEAT==1 => will_complete always true on first beat
+            // after push, we should clear assembling next cycle
+            if (!fifo_full) begin
+              // will push below in FIFO push block
+              assembling <= 1'b0;
+              seen_mask  <= '0;
+            end
+          end
+        end
+      end else begin
+        // assembling in progress
+        if (beat_fire) begin
+          // We assume beats belong to same tag; if not, you can choose to drop/flush or assert.
+          // synthesis translate_off
+          if (beat_tag !== cur_tag) begin
+            $display("WARN: beat_tag changed mid-assemble (cur=0x%h new=0x%h) @%0t", cur_tag, beat_tag, $time);
+          end
+          // synthesis translate_on
+
+          // only record unseen indices (ignore duplicates)
+          if (!seen_mask[beat_idx]) begin
+            cur_feat  <= put_word(cur_feat, beat_idx, beat_data);
+            seen_mask <= seen_mask | ({{(WORDS_PER_FEAT-1){1'b0}},1'b1} << beat_idx);
+          end
+
+          // if this beat completes the feature and we can push, clear assembler
+          if ( ( (seen_mask | ({{(WORDS_PER_FEAT-1){1'b0}},1'b1} << beat_idx)) == {WORDS_PER_FEAT{1'b1}} )
+               && !fifo_full ) begin
+            assembling <= 1'b0;
+            seen_mask  <= '0;
+            // cur_tag/cur_feat don't matter after push
+          end
+        end
+      end
+
+      // -------------------------
+      // FIFO push (write assembled feature)
+      // Note: we push the assembled data *after* incorporating current beat.
+      // -------------------------
+      if (fifo_push) begin
+        fifo_tag[wptr]  <= cur_tag;
+        // Use updated cur_feat if beat_idx was new; but cur_feat updates are nonblocking.
+        // So compute the "would-be" feat for the push here:
+        if (!seen_mask[beat_idx]) fifo_data[wptr] <= put_word(cur_feat, beat_idx, beat_data);
+        else                      fifo_data[wptr] <= cur_feat;
+
+        wptr <= inc_ptr(wptr);
+      end
+    end
+  end
+
+endmodule
+
+`default_nettype wire
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+
+module feat_sram_burst_top #(
+  parameter int unsigned SRAM_BUS_W      = 32,
+  parameter int unsigned MEM_AW          = 18,
+  parameter int unsigned FEAT_W          = 256,
+  parameter int unsigned WORDS_PER_FEAT  = 8,
+  parameter int unsigned TAG_W           = 16,
+
+  parameter int unsigned REQ_DEPTH       = 2,
+  parameter int unsigned META_DEPTH      = 16,
+  parameter int unsigned BEAT_DEPTH      = 16,
+
+  parameter int unsigned RD_FIFO_DEPTH   = 2   // rd_assemble_fifo output fifo depth
+)(
+  input  logic clk,
+  input  logic rst,
+
+  // =============================
+  // Request in (same as burst_engine)
+  // =============================
+  input  logic               req_valid,
+  output logic               req_ready,
+  input  logic               req_is_wr,
+  input  logic [FEAT_W-1:0]  req_wdata,
+  input  logic [TAG_W-1:0]   req_tag,
+  input  logic [MEM_AW-1:0]  req_addr,
+
+  // =============================
+  // SRAM command out
+  // =============================
+  output logic                  mem_req_valid,
+  input  logic                  mem_req_ready,
+  output logic                  mem_req_is_wr,
+  output logic [MEM_AW-1:0]     mem_req_addr,
+  output logic [SRAM_BUS_W-1:0] mem_req_wdata,
+  output logic [SRAM_BUS_W/8-1:0] mem_req_wmask,
+
+  // =============================
+  // SRAM read return in
+  // =============================
+  input  logic                  mem_rvalid,
+  input  logic [SRAM_BUS_W-1:0] mem_rdata,
+
+  // =============================
+  // Feature out (READ only)
+  // =============================
+  output logic               feat_out_valid,
+  input  logic               feat_out_ready,
+  output logic [TAG_W-1:0]   feat_out_tag,
+  output logic [FEAT_W-1:0]  feat_out_data
+);
+
+  localparam int unsigned BEAT_IDX_W =
+    (WORDS_PER_FEAT <= 1) ? 1 : $clog2(WORDS_PER_FEAT);
+
+  // -----------------------------
+  // internal beat wires
+  // -----------------------------
+  logic                  beat_valid;
+  logic                  beat_ready;
+  logic [TAG_W-1:0]      beat_tag;
+  logic [BEAT_IDX_W-1:0] beat_idx;
+  logic [SRAM_BUS_W-1:0] beat_data;
+
+  // -----------------------------
+  // burst_engine
+  // -----------------------------
+  burst_engine #(
+    .SRAM_BUS_W(SRAM_BUS_W),
+    .MEM_AW(MEM_AW),
+    .FEAT_W(FEAT_W),
+    .WORDS_PER_FEAT(WORDS_PER_FEAT),
+    .TAG_W(TAG_W),
+    .REQ_DEPTH(REQ_DEPTH),
+    .META_DEPTH(META_DEPTH),
+    .BEAT_DEPTH(BEAT_DEPTH)
+  ) u_burst (
+    .clk(clk),
+    .rst(rst),
+
+    .req_valid(req_valid),
+    .req_ready(req_ready),
+    .req_is_wr(req_is_wr),
+    .req_wdata(req_wdata),
+    .req_tag(req_tag),
+    .req_addr(req_addr),
+
+    .mem_req_valid(mem_req_valid),
+    .mem_req_ready(mem_req_ready),
+    .mem_req_is_wr(mem_req_is_wr),
+    .mem_req_addr(mem_req_addr),
+    .mem_req_wdata(mem_req_wdata),
+    .mem_req_wmask(mem_req_wmask),
+
+    .mem_rvalid(mem_rvalid),
+    .mem_rdata(mem_rdata),
+
+    .beat_out_valid(beat_valid),
+    .beat_out_ready(beat_ready),  // driven by assembler
+    .beat_out_data(beat_data),
+    .beat_out_tag(beat_tag),
+    .beat_out_idx(beat_idx)
+  );
+
+  // -----------------------------
+  // rd_assemble_fifo
+  // -----------------------------
+  rd_assemble_fifo #(
+    .SRAM_BUS_W(SRAM_BUS_W),
+    .FEAT_W(FEAT_W),
+    .WORDS_PER_FEAT(WORDS_PER_FEAT),
+    .TAG_W(TAG_W),
+    .FIFO_DEPTH(RD_FIFO_DEPTH)
+  ) u_rd_asm (
+    .clk(clk),
+    .rst(rst),
+
+    .beat_valid(beat_valid),
+    .beat_ready(beat_ready),
+    .beat_tag(beat_tag),
+    .beat_idx(beat_idx),
+    .beat_data(beat_data),
+
+    .feat_out_valid(feat_out_valid),
+    .feat_out_ready(feat_out_ready),
+    .feat_out_tag(feat_out_tag),
+    .feat_out_data(feat_out_data)
+  );
+
+endmodule
+
+`default_nettype wire
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module tile_feat_sram_burst_system #(
+  parameter int unsigned tile_x   = 320,
+  parameter int unsigned tile_y   = 180,
+  parameter int unsigned sram_bus = 32,
+  parameter int unsigned feat_dim = 8,
+  parameter int unsigned elen_W   = 32,
+  parameter int unsigned tag_w    = 16,
+  parameter bit          isclamp  = 1'b0,
+
+  // derived
+  parameter int unsigned FEAT_W          = feat_dim * elen_W,
+  parameter int unsigned WORDS_PER_FEAT  = (FEAT_W + sram_bus - 1) / sram_bus,
+  parameter int unsigned TOTAL_WORDS     = tile_x * tile_y * WORDS_PER_FEAT,
+  parameter int unsigned MEM_AW          = (TOTAL_WORDS <= 1) ? 1 : $clog2(TOTAL_WORDS),
+
+  // FIFOs
+  parameter int unsigned REQ_DEPTH       = 2,
+  parameter int unsigned META_DEPTH      = 16,
+  parameter int unsigned BEAT_DEPTH      = 16,
+  parameter int unsigned RD_FIFO_DEPTH   = 2
+)(
+  input  logic clk,
+  input  logic rst,
+
+  // =============================
+  // Tile write req
+  // =============================
+  input  logic                      valid_wr,
+  output logic                      ready_wr,
+  input  logic [$clog2(tile_y)-1:0] tile_i_wr,
+  input  logic [$clog2(tile_x)-1:0] tile_j_wr,
+  input  logic [FEAT_W-1:0]         feat_in,
+
+  // =============================
+  // Tile read req
+  // =============================
+  input  logic                      valid_rd,
+  output logic                      ready_rd,
+  input  logic [$clog2(tile_y)-1:0] tile_i_rd,
+  input  logic [$clog2(tile_x)-1:0] tile_j_rd,
+  input  logic [tag_w-1:0]          tag_rd,
+
+  // =============================
+  // SRAM command out
+  // =============================
+  output logic                      mem_req_valid,
+  input  logic                      mem_req_ready,
+  output logic                      mem_req_is_wr,
+  output logic [MEM_AW-1:0]         mem_req_addr,
+  output logic [sram_bus-1:0]       mem_req_wdata,
+  output logic [sram_bus/8-1:0]     mem_req_wmask,
+
+  // =============================
+  // SRAM read return in
+  // =============================
+  input  logic                      mem_rvalid,
+  input  logic [sram_bus-1:0]       mem_rdata,
+
+  // =============================
+  // Feature out (READ only)
+  // =============================
+  output logic                      feat_out_valid,
+  input  logic                      feat_out_ready,
+  output logic [tag_w-1:0]          feat_out_tag,
+  output logic [FEAT_W-1:0]         feat_out_data
+);
+
+  // -----------------------------------------
+  // 1) wrap: tile -> burst req
+  // -----------------------------------------
+  logic                 req_valid;
+  logic                 req_ready;
+  logic                 req_is_wr;
+  logic [MEM_AW-1:0]    req_addr;
+  logic [FEAT_W-1:0]    req_wdata;
+  logic [tag_w-1:0]     req_tag;
+
+  burst_req_if_tileaddr_wrap #(
+    .tile_x(tile_x),
+    .tile_y(tile_y),
+    .sram_bus(sram_bus),
+    .feat_dim(feat_dim),
+    .elen_W(elen_W),
+    .tag_w(tag_w),
+    .isclamp(isclamp)
+  ) u_if (
+    .clk(clk),
+    .rst(rst),
+
+    .valid_wr(valid_wr),
+    .ready_wr(ready_wr),
+    .tile_i_wr(tile_i_wr),
+    .tile_j_wr(tile_j_wr),
+    .feat_in(feat_in),
+
+    .valid_rd(valid_rd),
+    .ready_rd(ready_rd),
+    .tile_i_rd(tile_i_rd),
+    .tile_j_rd(tile_j_rd),
+    .tag_rd(tag_rd),
+
+    .req_valid(req_valid),
+    .req_ready(req_ready),
+    .req_is_wr(req_is_wr),
+    .sram_addr(req_addr),
+    .sram_wdata(req_wdata),
+    .sram_tag(req_tag)
+  );
+
+  // -----------------------------------------
+  // 2) burst + read assemble
+  // -----------------------------------------
+  feat_sram_burst_top #(
+    .SRAM_BUS_W(sram_bus),
+    .MEM_AW(MEM_AW),
+    .FEAT_W(FEAT_W),
+    .WORDS_PER_FEAT(WORDS_PER_FEAT),
+    .TAG_W(tag_w),
+    .REQ_DEPTH(REQ_DEPTH),
+    .META_DEPTH(META_DEPTH),
+    .BEAT_DEPTH(BEAT_DEPTH),
+    .RD_FIFO_DEPTH(RD_FIFO_DEPTH)
+  ) u_burst_top (
+    .clk(clk),
+    .rst(rst),
+
+    .req_valid(req_valid),
+    .req_ready(req_ready),
+    .req_is_wr(req_is_wr),
+    .req_wdata(req_wdata),
+    .req_tag(req_tag),
+    .req_addr(req_addr),
+
+    .mem_req_valid(mem_req_valid),
+    .mem_req_ready(mem_req_ready),
+    .mem_req_is_wr(mem_req_is_wr),
+    .mem_req_addr(mem_req_addr),
+    .mem_req_wdata(mem_req_wdata),
+    .mem_req_wmask(mem_req_wmask),
+
+    .mem_rvalid(mem_rvalid),
+    .mem_rdata(mem_rdata),
+
+    .feat_out_valid(feat_out_valid),
+    .feat_out_ready(feat_out_ready),
+    .feat_out_tag(feat_out_tag),
+    .feat_out_data(feat_out_data)
+  );
+
+endmodule
+
+`default_nettype wire
+
+
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+module sram_phy_wrap #(
+  parameter int unsigned SRAM_BUS_W = 32,
+  parameter int unsigned MEM_AW     = 18,
+  parameter int unsigned RD_LAT     = 1,
+  // for simulation/reg-mem fallback
+  parameter int unsigned MEM_WORDS  = (1 << MEM_AW)
+)(
+  input  logic clk,
+
+  // ---------- Command ----------
+  input  logic                  mem_cmd_valid,
+  output logic                  mem_cmd_ready,
+  input  logic                  mem_cmd_we,      // 1=write, 0=read
+  input  logic [MEM_AW-1:0]      mem_cmd_addr,
+  input  logic [SRAM_BUS_W-1:0]  mem_cmd_wdata,
+  input  logic [SRAM_BUS_W/8-1:0] mem_cmd_wmask, // 1=write that byte
+
+  // ---------- Read return ----------
+  output logic                  mem_rvalid,
+  output logic [SRAM_BUS_W-1:0] mem_rdata
+);
+
+  // ------------------------------------------------------------
+  // Ready policy:
+  // - simplest: always ready (you can add stall later)
+  // ------------------------------------------------------------
+  assign mem_cmd_ready = 1'b1;
+
+    // ------------------------------------------------------------
+    // Memory array (fallback model)
+    // Replace this block with SRAM macro/BRAM later.
+    // ------------------------------------------------------------
+    logic [SRAM_BUS_W-1:0] mem [0:MEM_WORDS-1];
+
+  // ------------------------------------------------------------
+  // Byte-mask write helper
+  // ------------------------------------------------------------
+  function automatic [SRAM_BUS_W-1:0] apply_wmask(
+    input [SRAM_BUS_W-1:0] oldv,
+    input [SRAM_BUS_W-1:0] newv,
+    input [SRAM_BUS_W/8-1:0] wmask
+  );
+    integer b;
+    reg [SRAM_BUS_W-1:0] tmp;
+    begin
+      tmp = oldv;
+      for (b = 0; b < SRAM_BUS_W/8; b = b + 1) begin
+        if (wmask[b]) tmp[b*8 +: 8] = newv[b*8 +: 8];
+      end
+      apply_wmask = tmp;
+    end
+  endfunction
+
+  // ------------------------------------------------------------
+  // Read latency pipeline
+  // ------------------------------------------------------------
+  localparam int unsigned LAT = (RD_LAT < 1) ? 1 : RD_LAT;
+
+  logic [MEM_AW-1:0] rd_addr_q [0:LAT-1];
+  logic              rd_vld_q  [0:LAT-1];
+
+  integer i;
+
+  // ------------------------------------------------------------
+  // Main sequential
+  // ------------------------------------------------------------
+  always_ff @(posedge clk) begin
+    // default
+    mem_rvalid <= 1'b0;
+
+    // shift read pipeline
+    for (i = LAT-1; i > 0; i = i - 1) begin
+      rd_vld_q[i]  <= rd_vld_q[i-1];
+      rd_addr_q[i] <= rd_addr_q[i-1];
+    end
+    rd_vld_q[0] <= 1'b0;
+
+    // accept command
+    if (mem_cmd_valid && mem_cmd_ready) begin
+      if (mem_cmd_we) begin
+        // WRITE: update memory (masked)
+        mem[mem_cmd_addr] <= apply_wmask(mem[mem_cmd_addr], mem_cmd_wdata, mem_cmd_wmask);
+      end else begin
+        // READ: enqueue address into latency pipeline
+        rd_vld_q[0]  <= 1'b1;
+        rd_addr_q[0] <= mem_cmd_addr;
+      end
+    end
+
+    // produce read return
+    if (rd_vld_q[LAT-1]) begin
+      mem_rvalid <= 1'b1;
+      mem_rdata  <= mem[rd_addr_q[LAT-1]];
+    end
+  end
+  
+endmodule
+
+`default_nettype wire
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+// ------------------------------------------------------------
+// tile_feat_sram_burst_system_with_phy
+// - 把 tile_feat_sram_burst_system + sram_phy_wrap 直接接在一起
+// - 外部只看到 tile wr/rd + feat_out
+// ------------------------------------------------------------
+module feature_sram #(
+  parameter int unsigned tile_x   = 320,
+  parameter int unsigned tile_y   = 180,
+  parameter int unsigned sram_bus = 32,
+  parameter int unsigned feat_dim = 8,
+  parameter int unsigned elen_W   = 32,
+  parameter int unsigned tag_w    = 16,
+  parameter bit          isclamp  = 1'b0,
+
+  // derived
+  parameter int unsigned FEAT_W          = feat_dim * elen_W,
+  parameter int unsigned WORDS_PER_FEAT  = (FEAT_W + sram_bus - 1) / sram_bus,
+  parameter int unsigned TOTAL_WORDS     = tile_x * tile_y * WORDS_PER_FEAT,
+  parameter int unsigned MEM_AW          = (TOTAL_WORDS <= 1) ? 1 : $clog2(TOTAL_WORDS),
+
+  // FIFOs (burst)
+  parameter int unsigned REQ_DEPTH       = 2,
+  parameter int unsigned META_DEPTH      = 16,
+  parameter int unsigned BEAT_DEPTH      = 16,
+  parameter int unsigned RD_FIFO_DEPTH   = 2,
+
+  // SRAM PHY
+  parameter int unsigned RD_LAT          = 2,
+  parameter int unsigned MEM_WORDS       = (1 << MEM_AW)
+)(
+  input  logic clk,
+  input  logic rst,
+
+  // =============================
+  // Tile write req
+  // =============================
+  input  logic                      valid_wr,
+  output logic                      ready_wr,
+  input  logic [$clog2(tile_y)-1:0] tile_i_wr,
+  input  logic [$clog2(tile_x)-1:0] tile_j_wr,
+  input  logic [FEAT_W-1:0]         feat_in,
+
+  // =============================
+  // Tile read req
+  // =============================
+  input  logic                      valid_rd,
+  output logic                      ready_rd,
+  input  logic [$clog2(tile_y)-1:0] tile_i_rd,
+  input  logic [$clog2(tile_x)-1:0] tile_j_rd,
+  input  logic [tag_w-1:0]          tag_rd,
+
+  // =============================
+  // Feature out (READ only)
+  // =============================
+  output logic                      feat_out_valid,
+  input  logic                      feat_out_ready,
+  output logic [tag_w-1:0]          feat_out_tag,
+  output logic [FEAT_W-1:0]         feat_out_data
+);
+
+  // ------------------------------------------------------------
+  // Internal SRAM cmd / return wires
+  // ------------------------------------------------------------
+  logic                      mem_req_valid;
+  logic                      mem_req_ready;
+  logic                      mem_req_is_wr;
+  logic [MEM_AW-1:0]         mem_req_addr;
+  logic [sram_bus-1:0]       mem_req_wdata;
+  logic [sram_bus/8-1:0]     mem_req_wmask;
+
+  logic                      mem_rvalid;
+  logic [sram_bus-1:0]       mem_rdata;
+
+  // ------------------------------------------------------------
+  // 1) tile -> burst system
+  // ------------------------------------------------------------
+  tile_feat_sram_burst_system #(
+    .tile_x(tile_x),
+    .tile_y(tile_y),
+    .sram_bus(sram_bus),
+    .feat_dim(feat_dim),
+    .elen_W(elen_W),
+    .tag_w(tag_w),
+    .isclamp(isclamp),
+
+    .FEAT_W(FEAT_W),
+    .WORDS_PER_FEAT(WORDS_PER_FEAT),
+    .TOTAL_WORDS(TOTAL_WORDS),
+    .MEM_AW(MEM_AW),
+
+    .REQ_DEPTH(REQ_DEPTH),
+    .META_DEPTH(META_DEPTH),
+    .BEAT_DEPTH(BEAT_DEPTH),
+    .RD_FIFO_DEPTH(RD_FIFO_DEPTH)
+  ) u_sys (
+    .clk(clk),
+    .rst(rst),
+
+    .valid_wr(valid_wr),
+    .ready_wr(ready_wr),
+    .tile_i_wr(tile_i_wr),
+    .tile_j_wr(tile_j_wr),
+    .feat_in(feat_in),
+
+    .valid_rd(valid_rd),
+    .ready_rd(ready_rd),
+    .tile_i_rd(tile_i_rd),
+    .tile_j_rd(tile_j_rd),
+    .tag_rd(tag_rd),
+
+    .mem_req_valid(mem_req_valid),
+    .mem_req_ready(mem_req_ready),
+    .mem_req_is_wr(mem_req_is_wr),
+    .mem_req_addr(mem_req_addr),
+    .mem_req_wdata(mem_req_wdata),
+    .mem_req_wmask(mem_req_wmask),
+
+    .mem_rvalid(mem_rvalid),
+    .mem_rdata(mem_rdata),
+
+    .feat_out_valid(feat_out_valid),
+    .feat_out_ready(feat_out_ready),
+    .feat_out_tag(feat_out_tag),
+    .feat_out_data(feat_out_data)
+  );
+
+  // ------------------------------------------------------------
+  // 2) SRAM PHY WRAP (reg-mem model now, later換macro/BRAM)
+  // ------------------------------------------------------------
+  logic phy_cmd_ready;
+
+  sram_phy_wrap #(
+    .SRAM_BUS_W(sram_bus),
+    .MEM_AW(MEM_AW),
+    .RD_LAT(RD_LAT),
+    .MEM_WORDS(MEM_WORDS)
+  ) u_phy (
+    .clk(clk),
+
+    .mem_cmd_valid(mem_req_valid),
+    .mem_cmd_ready(phy_cmd_ready),
+    .mem_cmd_we   (mem_req_is_wr),
+    .mem_cmd_addr (mem_req_addr),
+    .mem_cmd_wdata(mem_req_wdata),
+    .mem_cmd_wmask(mem_req_wmask),
+
+    .mem_rvalid(mem_rvalid),
+    .mem_rdata (mem_rdata)
+  );
+
+  // burst system expects mem_req_ready
+  assign mem_req_ready = phy_cmd_ready;
+
+endmodule
+
+`default_nettype wire
+
+
+`timescale 1ns/1ps
+`default_nettype none
+
+// ============================================================
+// 1-deep skid buffer (NO DROP, ready/valid compliant)
+// - upstream must hold in_data stable while in_valid=1 and in_ready=0
+// ============================================================
+module rv_skid_1_nodrop #(
+  parameter int unsigned DW = 32
+)(
+  input  logic           clk,
+  input  logic           rst,
+  input  logic           en,
+
+  input  logic           in_valid,
+  output logic           in_ready,
+  input  logic [DW-1:0]  in_data,
+
+  output logic           out_valid,
+  input  logic           out_ready,
+  output logic [DW-1:0]  out_data
+);
+  logic          full;
+  logic [DW-1:0] buf_r;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      full  <= 1'b0;
+      buf_r <= '0;
+    end else if (en) begin
+      // pop
+      if (full && out_ready) begin
+        full <= 1'b0;
+      end
+
+      // push (capture one beat when downstream stalls)
+      if (!full) begin
+        if (in_valid && !out_ready) begin
+          full  <= 1'b1;
+          buf_r <= in_data;
+        end
+      end
+    end
+  end
+
+  always_comb begin
+    if (!en) begin
+      in_ready  = 1'b0;
+      out_valid = 1'b0;
+      out_data  = '0;
+    end else if (full) begin
+      out_valid = 1'b1;
+      out_data  = buf_r;
+      in_ready  = 1'b0;      // MUST backpressure upstream
+    end else begin
+      out_valid = in_valid;
+      out_data  = in_data;
+      in_ready  = out_ready; // pass-through when not buffering
+    end
+  end
+endmodule
+
+
+// ------------------------------------------------------------
+// pix_xy_feature_sram_integrated_top
+// - Adds: event pending alignment + no-drop skid for (sof/eol/eof/y)
+// ------------------------------------------------------------
+module pix_xy_feature_sram_integrated_top #(
+  // -----------------------------
+  // video / coordinate
+  // -----------------------------
+  parameter int unsigned X_W      = 11,
+  parameter int unsigned Y_W      = 10,
+  parameter int unsigned ACTIVE_W = 1280,
+  parameter int unsigned ACTIVE_H = 720,
+
+  parameter int unsigned TILE_SHIFT = 2,
+  parameter int unsigned TILES_X    = (ACTIVE_W >> TILE_SHIFT),
+  parameter int unsigned TILES_Y    = (ACTIVE_H >> TILE_SHIFT),
+
+  parameter int unsigned YPIX_W = 8,
+
+  parameter bit USE_SOF = 1'b1,
+  parameter bit USE_EOL = 1'b0,
+  parameter bit USE_EOF = 1'b0,
+  parameter bit SAT_AT_MAX = 1'b0,
+  parameter bit ADVANCE_ON_VALID_ONLY = 1'b1,
+
+  parameter bit          ROI_EN_DEFAULT  = 1'b0,
+  parameter int unsigned ROI_X0_DEFAULT  = 0,
+  parameter int unsigned ROI_Y0_DEFAULT  = 0,
+  parameter int unsigned ROI_X1_DEFAULT  = ACTIVE_W-1,
+  parameter int unsigned ROI_Y1_DEFAULT  = ACTIVE_H-1,
+
+  parameter bit DBG_COUNTERS_EN = 1'b1,
+
+  // -----------------------------
+  // tile_stats_edge knobs
+  // -----------------------------
+  parameter int unsigned TILE_W = 4,
+  parameter int unsigned TILE_H = 4,
+
+  parameter bit SUPPORT_PIX_VALID_STATS = 1'b1,
+  parameter bit DO_SUMSQ_STATS          = 1'b0,
+  parameter bit ASSERT_ON_STATS         = 1'b1,
+
+  parameter bit SUPPORT_PIX_VALID_EDGE  = 1'b1,
+  parameter bit SUPPORT_TILE_START_EDGE = 1'b1,
+  parameter bit ASSERT_ON_EDGE          = 1'b0,
+
+  parameter int unsigned EDGE_MODE = 0,
+  parameter int unsigned EDGE_THR  = 8,
+  parameter int unsigned EDGE_W    = 32,
+  parameter int unsigned CNT_W     = 8,
+
+  // -----------------------------
+  // feature pack knobs
+  // -----------------------------
+  parameter int unsigned FEAT_W   = 16,
+  parameter int unsigned FEAT_DIM = 8,
+
+  parameter bit EDGE_USE_MEAN = 1'b1,
+
+  parameter int unsigned TILE_PIX_SHIFT  = 4,
+  parameter int unsigned TILE_PIX_N      = 16,
+  parameter bit          MEAN_MODE_SHIFT = 1'b1,
+
+  parameter bit MATCH_MODE_BUFFERED = 1'b0,
+  parameter bit ZERO_WHEN_INVALID   = 1'b0,
+
+  parameter int unsigned FEAT0_SHIFT = 0,
+  parameter int unsigned FEAT1_SHIFT = 0,
+  parameter int unsigned FEAT2_SHIFT = 0,
+  parameter int unsigned FEAT3_SHIFT = 0,
+  parameter int signed   FEAT0_BIAS  = 0,
+  parameter int signed   FEAT1_BIAS  = 0,
+  parameter int signed   FEAT2_BIAS  = 0,
+  parameter int signed   FEAT3_BIAS  = 0,
+  parameter int unsigned FEAT_CLAMP_MAX = (1<<FEAT_W)-1,
+
+  // meta widths
+  parameter int unsigned TILE_I_W  = 16,
+  parameter int unsigned TILE_J_W  = 16,
+  parameter int unsigned TILE_ID_W = (TILES_X*TILES_Y <= 1) ? 1 : $clog2(TILES_X*TILES_Y),
+
+  parameter bit ENABLE_CNTS = 1'b1,
+
+  // -----------------------------
+  // feature_sram
+  // -----------------------------
+  parameter int unsigned sram_bus = 32,
+  parameter int unsigned elen_W   = 32,
+  parameter int unsigned tag_w    = 16,
+  parameter bit          isclamp  = 1'b0,
+
+  parameter int unsigned REQ_DEPTH     = 2,
+  parameter int unsigned META_DEPTH    = 16,
+  parameter int unsigned BEAT_DEPTH    = 16,
+  parameter int unsigned RD_FIFO_DEPTH = 2,
+
+  parameter int unsigned RD_LAT    = 2
+)(
+  input  logic clk,
+  input  logic rst,
+
+  // pixel stream in
+  input  logic              en,
+  input  logic              pix_valid,
+  output logic              pix_ready,
+  input  logic              sof,
+  input  logic              eol,
+  input  logic              eof,
+  input  logic [YPIX_W-1:0] y_in,
+
+  // external READ port
+  input  logic                       valid_rd,
+  output logic                       ready_rd,
+  input  logic [$clog2(TILES_Y)-1:0]  tile_i_rd,
+  input  logic [$clog2(TILES_X)-1:0]  tile_j_rd,
+  input  logic [tag_w-1:0]           tag_rd,
+
+  // feature OUT from SRAM
+  output logic                       feat_out_valid,
+  input  logic                       feat_out_ready,
+  output logic [tag_w-1:0]           feat_out_tag,
+  output logic [FEAT_DIM*elen_W-1:0] feat_out_data,
+
+  // write-side activity
+  output logic                       wr_fire,
+  output logic [TILE_I_W-1:0]        wr_tile_i,
+  output logic [TILE_J_W-1:0]        wr_tile_j,
+
+  // packer debug
+  output logic                       err_mismatch_pulse,
+  output logic [31:0]                cnt_join_ok,
+  output logic [31:0]                cnt_mismatch,
+  output logic [31:0]                cnt_drop
+);
+
+  // ============================================================
+  // (NEW) event pending + skid on input pixel stream
+  // ============================================================
+  logic pend_sof, pend_eol, pend_eof;
+
+  // in_ready of skid (this is what we expose as pix_ready)
+  logic in_ready_s;
+
+  // fire at module input boundary
+  wire in_fire = pix_valid && in_ready_s;
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      pend_sof <= 1'b0;
+      pend_eol <= 1'b0;
+      pend_eof <= 1'b0;
+    end else if (en) begin
+      // accumulate pulses even if pix_valid=0
+      pend_sof <= pend_sof | sof;
+      pend_eol <= pend_eol | eol;
+      pend_eof <= pend_eof | eof;
+
+      // consume pending on the next accepted pixel
+      if (in_fire) begin
+        pend_sof <= 1'b0;
+        pend_eol <= 1'b0;
+        pend_eof <= 1'b0;
+      end
+    end
+  end
+
+  // align events into the beat that actually enters the pipeline
+  wire sof_a = sof | pend_sof;
+  wire eol_a = eol | pend_eol;
+  wire eof_a = eof | pend_eof;
+
+  localparam int unsigned IN_DW = (3 + YPIX_W); // {sof,eol,eof,y}
+  wire [IN_DW-1:0] in_pack = {sof_a, eol_a, eof_a, y_in};
+
+  wire              pix_v_s;
+  wire              pix_r_s;
+  wire [IN_DW-1:0]  in_pack_s;
+
+  rv_skid_1_nodrop #(.DW(IN_DW)) u_in_skid (
+    .clk(clk),
+    .rst(rst),
+    .en(en),
+
+    .in_valid(pix_valid),
+    .in_ready(in_ready_s),
+    .in_data(in_pack),
+
+    .out_valid(pix_v_s),
+    .out_ready(pix_r_s),
+    .out_data(in_pack_s)
+  );
+
+  // expose ready to upstream
+  assign pix_ready = in_ready_s;
+
+  // unpack to feature_top side
+  wire sof_s;
+  wire eol_s;
+  wire eof_s;
+  wire [YPIX_W-1:0] y_s;
+  assign {sof_s, eol_s, eof_s, y_s} = in_pack_s;
+
+  // ============================================================
+  // A) pix_xy_feature_top
+  // ============================================================
+  logic                 feat_valid;
+  logic                 feat_ready;
+
+  logic [TILE_I_W-1:0]  tile_i_o;
+  logic [TILE_J_W-1:0]  tile_j_o;
+  logic [TILE_ID_W-1:0] tile_id_o;
+
+  logic [8*FEAT_W-1:0]  feat_vec_8;
+
+  pix_xy_feature_top #(
+    .X_W(X_W), .Y_W(Y_W),
+    .ACTIVE_W(ACTIVE_W), .ACTIVE_H(ACTIVE_H),
+    .TILE_SHIFT(TILE_SHIFT),
+    .TILES_X(TILES_X), .TILES_Y(TILES_Y),
+    .YPIX_W(YPIX_W),
+
+    .USE_SOF(USE_SOF),
+    .USE_EOL(USE_EOL),
+    .USE_EOF(USE_EOF),
+    .SAT_AT_MAX(SAT_AT_MAX),
+    .ADVANCE_ON_VALID_ONLY(ADVANCE_ON_VALID_ONLY),
+
+    .ROI_EN_DEFAULT(ROI_EN_DEFAULT),
+    .ROI_X0_DEFAULT(ROI_X0_DEFAULT),
+    .ROI_Y0_DEFAULT(ROI_Y0_DEFAULT),
+    .ROI_X1_DEFAULT(ROI_X1_DEFAULT),
+    .ROI_Y1_DEFAULT(ROI_Y1_DEFAULT),
+
+    .DBG_COUNTERS_EN(DBG_COUNTERS_EN),
+
+    .TILE_W(TILE_W), .TILE_H(TILE_H),
+    .SUPPORT_PIX_VALID_STATS(SUPPORT_PIX_VALID_STATS),
+    .DO_SUMSQ_STATS(DO_SUMSQ_STATS),
+    .ASSERT_ON_STATS(ASSERT_ON_STATS),
+
+    .SUPPORT_PIX_VALID_EDGE(SUPPORT_PIX_VALID_EDGE),
+    .SUPPORT_TILE_START_EDGE(SUPPORT_TILE_START_EDGE),
+    .ASSERT_ON_EDGE(ASSERT_ON_EDGE),
+
+    .EDGE_MODE(EDGE_MODE),
+    .EDGE_THR(EDGE_THR),
+    .EDGE_W(EDGE_W),
+    .CNT_W(CNT_W),
+
+    .FEAT_W(FEAT_W),
+    .FEAT_DIM(FEAT_DIM),
+
+    .EDGE_USE_MEAN(EDGE_USE_MEAN),
+    .TILE_PIX_SHIFT(TILE_PIX_SHIFT),
+    .TILE_PIX_N(TILE_PIX_N),
+    .MEAN_MODE_SHIFT(MEAN_MODE_SHIFT),
+
+    .MATCH_MODE_BUFFERED(MATCH_MODE_BUFFERED),
+    .ZERO_WHEN_INVALID(ZERO_WHEN_INVALID),
+
+    .FEAT0_SHIFT(FEAT0_SHIFT),
+    .FEAT1_SHIFT(FEAT1_SHIFT),
+    .FEAT2_SHIFT(FEAT2_SHIFT),
+    .FEAT3_SHIFT(FEAT3_SHIFT),
+    .FEAT0_BIAS(FEAT0_BIAS),
+    .FEAT1_BIAS(FEAT1_BIAS),
+    .FEAT2_BIAS(FEAT2_BIAS),
+    .FEAT3_BIAS(FEAT3_BIAS),
+    .FEAT_CLAMP_MAX(FEAT_CLAMP_MAX),
+
+    .TILE_I_W(TILE_I_W),
+    .TILE_J_W(TILE_J_W),
+    .TILE_ID_W(TILE_ID_W),
+
+    .ENABLE_CNTS(ENABLE_CNTS)
+  ) u_pix2feat (
+    .clk(clk),
+    .rst(rst),
+    .en(en),
+
+    .pix_valid(pix_v_s),
+    .pix_ready(pix_r_s),
+    .sof(sof_s),
+    .eol(eol_s),
+    .eof(eof_s),
+    .y_in(y_s),
+
+    .feat_valid(feat_valid),
+    .feat_ready(feat_ready),
+
+    .tile_i_o(tile_i_o),
+    .tile_j_o(tile_j_o),
+    .tile_id_o(tile_id_o),
+
+    .feat0(), .feat1(), .feat2(), .feat3(),
+    .feat4(), .feat5(), .feat6(), .feat7(),
+    .feat_vec(feat_vec_8),
+
+    .stats_tile_err(),
+    .stats_err_code(),
+    .err_mismatch_pulse(err_mismatch_pulse),
+    .cnt_join_ok(cnt_join_ok),
+    .cnt_mismatch(cnt_mismatch),
+    .cnt_drop(cnt_drop),
+
+    .x(), .y(),
+    .tile_j_dbg(), .tile_i_dbg(),
+    .x_mod(), .y_mod(),
+    .tile_first(), .tile_last(),
+    .in_roi(),
+    .err_sof_midframe(),
+    .err_eol_mismatch(),
+    .frame_cnt(),
+    .line_cnt()
+  );
+
+  // ============================================================
+  // Convert feat_vec -> SRAM write data (zero-extend FEAT_W -> elen_W)
+  // ============================================================
+  localparam int unsigned FEAT_SRAM_W = FEAT_DIM * elen_W;
+  logic [FEAT_SRAM_W-1:0] feat_wr_data;
+
+  genvar d;
+  generate
+    for (d = 0; d < FEAT_DIM; d++) begin : G_EXT
+      wire [FEAT_W-1:0] lane = feat_vec_8[d*FEAT_W +: FEAT_W];
+      assign feat_wr_data[d*elen_W +: elen_W] = {{(elen_W-FEAT_W){1'b0}}, lane};
+    end
+  endgenerate
+
+  // ============================================================
+  // B) feature_sram
+  // ============================================================
+  logic                       valid_wr_s, ready_wr_s;
+  logic [$clog2(TILES_Y)-1:0] tile_i_wr_s;
+  logic [$clog2(TILES_X)-1:0] tile_j_wr_s;
+
+  assign valid_wr_s = feat_valid;
+  assign feat_ready = ready_wr_s;
+
+  assign tile_i_wr_s = tile_i_o[$clog2(TILES_Y)-1:0];
+  assign tile_j_wr_s = tile_j_o[$clog2(TILES_X)-1:0];
+
+  feature_sram #(
+    .tile_x(TILES_X),
+    .tile_y(TILES_Y),
+    .sram_bus(sram_bus),
+    .feat_dim(FEAT_DIM),
+    .elen_W(elen_W),
+    .tag_w(tag_w),
+    .isclamp(isclamp),
+
+    .REQ_DEPTH(REQ_DEPTH),
+    .META_DEPTH(META_DEPTH),
+    .BEAT_DEPTH(BEAT_DEPTH),
+    .RD_FIFO_DEPTH(RD_FIFO_DEPTH),
+
+    .RD_LAT(RD_LAT)
+  ) u_feat_sram (
+    .clk(clk),
+    .rst(rst),
+
+    .valid_wr(valid_wr_s),
+    .ready_wr(ready_wr_s),
+    .tile_i_wr(tile_i_wr_s),
+    .tile_j_wr(tile_j_wr_s),
+    .feat_in(feat_wr_data),
+
+    .valid_rd(valid_rd),
+    .ready_rd(ready_rd),
+    .tile_i_rd(tile_i_rd),
+    .tile_j_rd(tile_j_rd),
+    .tag_rd(tag_rd),
+
+    .feat_out_valid(feat_out_valid),
+    .feat_out_ready(feat_out_ready),
+    .feat_out_tag(feat_out_tag),
+    .feat_out_data(feat_out_data)
+  );
+
+  assign wr_fire   = valid_wr_s & ready_wr_s;
+  assign wr_tile_i = tile_i_o;
+  assign wr_tile_j = tile_j_o;
+
+endmodule
+
+`default_nettype wire
+

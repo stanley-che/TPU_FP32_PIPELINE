@@ -1,0 +1,1265 @@
+$date
+	Sat Jan 31 00:39:59 2026
+$end
+$version
+	Icarus Verilog
+$end
+$timescale
+	1ps
+$end
+$scope module tb_pix_xy_feature_to $end
+$var wire 1 ! fire_feat $end
+$var wire 1 " fire_in $end
+$var wire 16 # tile_j_o [15:0] $end
+$var wire 3 $ tile_id_o [2:0] $end
+$var wire 16 % tile_i_o [15:0] $end
+$var wire 1 & stats_tile_err $end
+$var wire 8 ' stats_err_code [7:0] $end
+$var wire 1 ( pix_ready $end
+$var wire 128 ) feat_vec [127:0] $end
+$var wire 1 * feat_valid $end
+$var wire 16 + feat7 [15:0] $end
+$var wire 16 , feat6 [15:0] $end
+$var wire 16 - feat5 [15:0] $end
+$var wire 16 . feat4 [15:0] $end
+$var wire 16 / feat3 [15:0] $end
+$var wire 16 0 feat2 [15:0] $end
+$var wire 16 1 feat1 [15:0] $end
+$var wire 16 2 feat0 [15:0] $end
+$var wire 1 3 err_mismatch_pulse $end
+$var wire 32 4 cnt_mismatch [31:0] $end
+$var wire 32 5 cnt_join_ok [31:0] $end
+$var wire 32 6 cnt_drop [31:0] $end
+$var parameter 32 7 ACTIVE_H $end
+$var parameter 32 8 ACTIVE_W $end
+$var parameter 32 9 CNT_W $end
+$var parameter 1 : EDGE_USE_MEAN $end
+$var parameter 32 ; EDGE_W $end
+$var parameter 32 < FEAT_DIM $end
+$var parameter 32 = FEAT_W $end
+$var parameter 32 > QDEPTH $end
+$var parameter 32 ? SUM_MAX $end
+$var parameter 32 @ SUM_W $end
+$var parameter 32 A THR $end
+$var parameter 32 B TILES_X $end
+$var parameter 32 C TILES_Y $end
+$var parameter 32 D TILE_H $end
+$var parameter 32 E TILE_PIX $end
+$var parameter 32 F TILE_SHIFT $end
+$var parameter 32 G TILE_W $end
+$var parameter 32 H X_W $end
+$var parameter 32 I YPIX_W $end
+$var parameter 32 J Y_W $end
+$var reg 1 K clk $end
+$var reg 1 L en $end
+$var reg 1 M eof $end
+$var reg 1 N eol $end
+$var reg 1 O feat_ready $end
+$var reg 1 P hold_active $end
+$var reg 16 Q hold_f0 [15:0] $end
+$var reg 16 R hold_f1 [15:0] $end
+$var reg 16 S hold_f2 [15:0] $end
+$var reg 16 T hold_f3 [15:0] $end
+$var reg 16 U hold_f4 [15:0] $end
+$var reg 16 V hold_f5 [15:0] $end
+$var reg 16 W hold_f6 [15:0] $end
+$var reg 16 X hold_f7 [15:0] $end
+$var reg 16 Y hold_ti [15:0] $end
+$var reg 2 Z hold_tid [-1:0] $end
+$var reg 16 [ hold_tj [15:0] $end
+$var reg 128 \ hold_vec [127:0] $end
+$var reg 1 ] pix_valid $end
+$var reg 1 ^ rst $end
+$var reg 1 _ sof $end
+$var reg 8 ` y_in [7:0] $end
+$var integer 32 a acc_edge_cnt [31:0] $end
+$var integer 32 b acc_edge_max [31:0] $end
+$var integer 32 c acc_edge_sum [31:0] $end
+$var integer 32 d acc_max [31:0] $end
+$var integer 32 e acc_min [31:0] $end
+$var integer 32 f acc_sum [31:0] $end
+$var reg 1 g bp_enable $end
+$var integer 32 h cur_tile_i [31:0] $end
+$var integer 32 i cur_tile_j [31:0] $end
+$var integer 32 j cyc [31:0] $end
+$var integer 32 k pix_x [31:0] $end
+$var integer 32 l pix_y [31:0] $end
+$var integer 32 m q_rptr [31:0] $end
+$var integer 32 n q_wptr [31:0] $end
+$var integer 32 o xx [31:0] $end
+$var integer 32 p yy [31:0] $end
+$upscope $end
+$scope module tb_pix_xy_feature_to $end
+$scope module dut $end
+$var wire 1 K clk $end
+$var wire 1 L en $end
+$var wire 1 M eof $end
+$var wire 1 N eol $end
+$var wire 1 O feat_ready $end
+$var wire 1 ] pix_valid $end
+$var wire 1 ^ rst $end
+$var wire 1 _ sof $end
+$var wire 16 q ti [15:0] $end
+$var wire 1 r tile_ready $end
+$var wire 16 s tj [15:0] $end
+$var wire 1 t v3_valid $end
+$var wire 1 u v4_valid $end
+$var wire 8 v y_in [7:0] $end
+$var wire 16 w y_meta_o [15:0] $end
+$var wire 1 x v4_ready $end
+$var wire 1 y v3_ready $end
+$var wire 16 z tile_y_o [15:0] $end
+$var wire 16 { tile_x_o [15:0] $end
+$var wire 1 | tile_valid $end
+$var wire 16 } tile_j_o [15:0] $end
+$var wire 3 ~ tile_id_o [2:0] $end
+$var wire 16 !" tile_i_o [15:0] $end
+$var wire 12 "" sumY [11:0] $end
+$var wire 1 & stats_tile_err $end
+$var wire 8 #" stats_err_code [7:0] $end
+$var wire 8 $" rangeY [7:0] $end
+$var wire 1 ( pix_ready $end
+$var wire 8 %" minY [7:0] $end
+$var wire 8 &" meanY [7:0] $end
+$var wire 8 '" maxY [7:0] $end
+$var wire 16 (" frame_id_o [15:0] $end
+$var wire 128 )" feat_vec [127:0] $end
+$var wire 1 * feat_valid $end
+$var wire 16 *" feat7 [15:0] $end
+$var wire 16 +" feat6 [15:0] $end
+$var wire 16 ," feat5 [15:0] $end
+$var wire 16 -" feat4 [15:0] $end
+$var wire 16 ." feat3 [15:0] $end
+$var wire 16 /" feat2 [15:0] $end
+$var wire 16 0" feat1 [15:0] $end
+$var wire 16 1" feat0 [15:0] $end
+$var wire 1 3 err_mismatch_pulse $end
+$var wire 32 2" edge_sum [31:0] $end
+$var wire 32 3" edge_mean [31:0] $end
+$var wire 32 4" edge_max [31:0] $end
+$var wire 8 5" edge_cnt [7:0] $end
+$var wire 32 6" cnt_mismatch [31:0] $end
+$var wire 32 7" cnt_join_ok [31:0] $end
+$var wire 32 8" cnt_drop [31:0] $end
+$var parameter 32 9" ACTIVE_H $end
+$var parameter 32 :" ACTIVE_W $end
+$var parameter 32 ;" CNT_W $end
+$var parameter 32 <" EDGE_MODE $end
+$var parameter 32 =" EDGE_THR $end
+$var parameter 1 >" EDGE_USE_MEAN $end
+$var parameter 32 ?" EDGE_W $end
+$var parameter 32 @" FEAT_DIM $end
+$var parameter 32 A" FEAT_W $end
+$var parameter 1 B" MATCH_MODE_BUFFERED $end
+$var parameter 1 C" MEAN_MODE_SHIFT $end
+$var parameter 32 D" SUM_MAX $end
+$var parameter 32 E" SUM_W $end
+$var parameter 32 F" TILES_X $end
+$var parameter 32 G" TILES_Y $end
+$var parameter 32 H" TILE_H $end
+$var parameter 32 I" TILE_ID_W $end
+$var parameter 32 J" TILE_I_W $end
+$var parameter 32 K" TILE_J_W $end
+$var parameter 32 L" TILE_PIXELS $end
+$var parameter 32 M" TILE_PIX_N $end
+$var parameter 32 N" TILE_PIX_SHIFT $end
+$var parameter 32 O" TILE_SHIFT $end
+$var parameter 32 P" TILE_W $end
+$var parameter 32 Q" X_W $end
+$var parameter 32 R" YPIX_W $end
+$var parameter 32 S" Y_W $end
+$scope module u_pack $end
+$var wire 1 T" buffered_join_valid $end
+$var wire 1 U" buffered_mismatch $end
+$var wire 1 V" buffered_take $end
+$var wire 1 W" can_take_out $end
+$var wire 1 K clk $end
+$var wire 1 O feat_ready $end
+$var wire 1 ^ rst $end
+$var wire 1 X" strict_join_valid $end
+$var wire 1 Y" strict_mismatch $end
+$var wire 1 Z" strict_take $end
+$var wire 1 [" strict_v3_ready $end
+$var wire 1 \" strict_v4_ready $end
+$var wire 16 ]" tile_i [15:0] $end
+$var wire 16 ^" tile_j [15:0] $end
+$var wire 1 t v3_valid $end
+$var wire 16 _" v4_tile_i [15:0] $end
+$var wire 16 `" v4_tile_j [15:0] $end
+$var wire 1 u v4_valid $end
+$var wire 16 a" ymean_s_u [15:0] $end
+$var wire 16 b" ymean_b_u [15:0] $end
+$var wire 3 c" v4_id_now [2:0] $end
+$var wire 3 d" v3_id_now [2:0] $end
+$var wire 12 e" sumY [11:0] $end
+$var wire 8 f" minY [7:0] $end
+$var wire 8 g" maxY [7:0] $end
+$var wire 1 h" id_match_now $end
+$var wire 32 i" edge_sum [31:0] $end
+$var wire 16 j" edge_s_u [15:0] $end
+$var wire 16 k" edge_b_u [15:0] $end
+$var wire 1 l" buffered_v4_ready $end
+$var wire 1 m" buffered_v3_ready $end
+$var wire 1 n" b_id_match $end
+$var wire 3 o" b4_id [2:0] $end
+$var wire 3 p" b3_id [2:0] $end
+$var parameter 1 q" EDGE_USE_MEAN $end
+$var parameter 32 r" EDGE_W $end
+$var parameter 1 s" ENABLE_CNTS $end
+$var parameter 32 t" FEAT0_BIAS $end
+$var parameter 32 u" FEAT0_SHIFT $end
+$var parameter 32 v" FEAT1_BIAS $end
+$var parameter 32 w" FEAT1_SHIFT $end
+$var parameter 32 x" FEAT2_BIAS $end
+$var parameter 32 y" FEAT2_SHIFT $end
+$var parameter 32 z" FEAT3_BIAS $end
+$var parameter 32 {" FEAT3_SHIFT $end
+$var parameter 32 |" FEAT_CLAMP_MAX $end
+$var parameter 32 }" FEAT_DIM $end
+$var parameter 32 ~" FEAT_W $end
+$var parameter 1 !# MATCH_MODE_BUFFERED $end
+$var parameter 1 "# MEAN_MODE_SHIFT $end
+$var parameter 32 ## SUM_W $end
+$var parameter 32 $# TILES_X $end
+$var parameter 32 %# TILES_Y $end
+$var parameter 32 &# TILE_ID_W $end
+$var parameter 32 '# TILE_I_W $end
+$var parameter 32 (# TILE_J_W $end
+$var parameter 32 )# TILE_PIX_N $end
+$var parameter 32 *# TILE_PIX_SHIFT $end
+$var parameter 32 +# Y_W $end
+$var parameter 1 ,# ZERO_WHEN_INVALID $end
+$var reg 1 -# buf3_valid $end
+$var reg 1 .# buf4_valid $end
+$var reg 32 /# cnt_drop [31:0] $end
+$var reg 32 0# cnt_join_ok [31:0] $end
+$var reg 32 1# cnt_mismatch [31:0] $end
+$var reg 32 2# edge_b [31:0] $end
+$var reg 1 3 err_mismatch_pulse $end
+$var reg 16 3# f0_r [15:0] $end
+$var reg 16 4# f1_r [15:0] $end
+$var reg 16 5# f2_r [15:0] $end
+$var reg 16 6# f3_r [15:0] $end
+$var reg 16 7# f4_r [15:0] $end
+$var reg 16 8# f5_r [15:0] $end
+$var reg 16 9# f6_r [15:0] $end
+$var reg 16 :# f7_r [15:0] $end
+$var reg 16 ;# feat0 [15:0] $end
+$var reg 16 <# feat1 [15:0] $end
+$var reg 16 =# feat2 [15:0] $end
+$var reg 16 ># feat3 [15:0] $end
+$var reg 16 ?# feat4 [15:0] $end
+$var reg 16 @# feat5 [15:0] $end
+$var reg 16 A# feat6 [15:0] $end
+$var reg 16 B# feat7 [15:0] $end
+$var reg 1 * feat_valid $end
+$var reg 128 C# feat_vec [127:0] $end
+$var reg 128 D# feat_vec_r [127:0] $end
+$var reg 1 E# hold_valid $end
+$var reg 8 F# maxY_b [7:0] $end
+$var reg 8 G# minY_b [7:0] $end
+$var reg 12 H# sumY_b [11:0] $end
+$var reg 16 I# ti_b [15:0] $end
+$var reg 16 J# tile_i_o [15:0] $end
+$var reg 16 K# tile_i_r [15:0] $end
+$var reg 3 L# tile_id_o [2:0] $end
+$var reg 3 M# tile_id_r [2:0] $end
+$var reg 16 N# tile_j_o [15:0] $end
+$var reg 16 O# tile_j_r [15:0] $end
+$var reg 16 P# tj_b [15:0] $end
+$var reg 1 y v3_ready $end
+$var reg 1 x v4_ready $end
+$var reg 16 Q# v4_ti_b [15:0] $end
+$var reg 16 R# v4_tj_b [15:0] $end
+$scope function calc_tile_id_trunc $end
+$upscope $end
+$scope function clamp_u $end
+$upscope $end
+$scope function edge_feat_from_sum $end
+$upscope $end
+$scope function postproc $end
+$upscope $end
+$scope function y_mean_from_sum $end
+$upscope $end
+$scope begin $unm_blk_102 $end
+$upscope $end
+$scope begin $unm_blk_106 $end
+$var reg 16 S# f0n [15:0] $end
+$var reg 16 T# f1n [15:0] $end
+$var reg 16 U# f2n [15:0] $end
+$var reg 16 V# f3n [15:0] $end
+$upscope $end
+$upscope $end
+$scope module u_stats_edge_top $end
+$var wire 1 K clk $end
+$var wire 1 L en $end
+$var wire 1 M eof $end
+$var wire 1 N eol $end
+$var wire 1 r out_ready $end
+$var wire 1 W# pix_in_tile_valid $end
+$var wire 1 ] pix_valid $end
+$var wire 1 ^ rst $end
+$var wire 1 _ sof $end
+$var wire 1 X# tile_start $end
+$var wire 8 Y# y_in [7:0] $end
+$var wire 8 Z# y_up [7:0] $end
+$var wire 2 [# y_mod [1:0] $end
+$var wire 16 \# y_meta_o [15:0] $end
+$var wire 16 ]# y_meta [15:0] $end
+$var wire 8 ^# y_left [7:0] $end
+$var wire 1 _# y_last $end
+$var wire 8 `# y_cur [7:0] $end
+$var wire 6 a# y [5:0] $end
+$var wire 2 b# x_mod [1:0] $end
+$var wire 1 c# x_last $end
+$var wire 6 d# x [5:0] $end
+$var wire 1 e# v2_valid $end
+$var wire 1 f# v2_ready $end
+$var wire 16 g# tile_y_o [15:0] $end
+$var wire 1 h# tile_y_last $end
+$var wire 16 i# tile_y_idx [15:0] $end
+$var wire 16 j# tile_x_o [15:0] $end
+$var wire 1 k# tile_x_last $end
+$var wire 16 l# tile_x_idx [15:0] $end
+$var wire 1 m# tile_last $end
+$var wire 6 n# tile_j [5:0] $end
+$var wire 3 o# tile_idx [2:0] $end
+$var wire 6 p# tile_i [5:0] $end
+$var wire 1 q# tile_first $end
+$var wire 12 r# sumY [11:0] $end
+$var wire 1 & stats_tile_err $end
+$var wire 5 s# stats_pix_cnt_o [4:0] $end
+$var wire 8 t# stats_err_code [7:0] $end
+$var wire 8 u# rangeY [7:0] $end
+$var wire 1 ( pix_ready $end
+$var wire 1 | out_valid $end
+$var wire 8 v# minY [7:0] $end
+$var wire 8 w# meanY [7:0] $end
+$var wire 8 x# maxY [7:0] $end
+$var wire 1 y# line_start $end
+$var wire 1 z# line_last $end
+$var wire 32 {# line_cnt [31:0] $end
+$var wire 1 |# in_roi $end
+$var wire 1 }# frame_start $end
+$var wire 1 ~# frame_last $end
+$var wire 16 !$ frame_id_o [15:0] $end
+$var wire 16 "$ frame_id [15:0] $end
+$var wire 32 #$ frame_cnt [31:0] $end
+$var wire 1 $$ err_sof_midframe $end
+$var wire 1 %$ err_eol_mismatch $end
+$var wire 32 &$ edge_sum [31:0] $end
+$var wire 32 '$ edge_mean [31:0] $end
+$var wire 32 ($ edge_max [31:0] $end
+$var wire 8 )$ edge_cnt [7:0] $end
+$var parameter 32 *$ ACTIVE_H $end
+$var parameter 32 +$ ACTIVE_W $end
+$var parameter 1 ,$ ADVANCE_ON_VALID_ONLY $end
+$var parameter 1 -$ ASSERT_ON_EDGE $end
+$var parameter 1 .$ ASSERT_ON_STATS $end
+$var parameter 32 /$ CNT_W $end
+$var parameter 1 0$ DBG_COUNTERS_EN $end
+$var parameter 1 1$ DO_SUMSQ_STATS $end
+$var parameter 32 2$ EDGE_MODE $end
+$var parameter 32 3$ EDGE_THR $end
+$var parameter 32 4$ EDGE_W $end
+$var parameter 1 5$ ROI_EN_DEFAULT $end
+$var parameter 32 6$ ROI_X0_DEFAULT $end
+$var parameter 32 7$ ROI_X1_DEFAULT $end
+$var parameter 32 8$ ROI_Y0_DEFAULT $end
+$var parameter 32 9$ ROI_Y1_DEFAULT $end
+$var parameter 1 :$ SAT_AT_MAX $end
+$var parameter 32 ;$ SUMSQ_MAX $end
+$var parameter 32 <$ SUMSQ_W $end
+$var parameter 32 =$ SUM_MAX $end
+$var parameter 32 >$ SUM_W $end
+$var parameter 1 ?$ SUPPORT_PIX_VALID_EDGE $end
+$var parameter 1 @$ SUPPORT_PIX_VALID_STATS $end
+$var parameter 1 A$ SUPPORT_TILE_START_EDGE $end
+$var parameter 32 B$ TILES_X $end
+$var parameter 32 C$ TILES_Y $end
+$var parameter 32 D$ TILE_H $end
+$var parameter 32 E$ TILE_PIXELS $end
+$var parameter 32 F$ TILE_SHIFT $end
+$var parameter 32 G$ TILE_W $end
+$var parameter 1 H$ USE_EOF $end
+$var parameter 1 I$ USE_EOL $end
+$var parameter 1 J$ USE_SOF $end
+$var parameter 32 K$ X_W $end
+$var parameter 32 L$ YPIX_W $end
+$var parameter 32 M$ Y_W $end
+$scope module u_linebuf $end
+$var wire 1 K clk $end
+$var wire 1 L en $end
+$var wire 1 M eof $end
+$var wire 1 N eol $end
+$var wire 1 ] pix_valid $end
+$var wire 1 ^ rst $end
+$var wire 1 _ sof $end
+$var wire 6 N$ x [5:0] $end
+$var wire 6 O$ y [5:0] $end
+$var wire 8 P$ y_in [7:0] $end
+$var wire 8 Q$ y_up [7:0] $end
+$var wire 2 R$ y_mod [1:0] $end
+$var wire 8 S$ y_left [7:0] $end
+$var wire 1 _# y_last $end
+$var wire 6 T$ y_int [5:0] $end
+$var wire 8 U$ y_cur [7:0] $end
+$var wire 2 V$ x_mod [1:0] $end
+$var wire 1 c# x_last $end
+$var wire 6 W$ x_int [5:0] $end
+$var wire 1 X$ v1_valid $end
+$var wire 1 Y$ v1_ready $end
+$var wire 1 h# tile_y_last $end
+$var wire 1 k# tile_x_last $end
+$var wire 1 m# tile_last $end
+$var wire 6 Z$ tile_j [5:0] $end
+$var wire 3 [$ tile_idx [2:0] $end
+$var wire 6 \$ tile_i [5:0] $end
+$var wire 1 q# tile_first $end
+$var wire 1 ( pix_ready $end
+$var wire 1 e# out_valid $end
+$var wire 1 f# out_ready $end
+$var wire 1 y# line_start $end
+$var wire 1 z# line_last $end
+$var wire 32 ]$ line_cnt [31:0] $end
+$var wire 1 |# in_roi $end
+$var wire 1 }# frame_start $end
+$var wire 1 ~# frame_last $end
+$var wire 32 ^$ frame_cnt [31:0] $end
+$var wire 1 $$ err_sof_midframe $end
+$var wire 1 %$ err_eol_mismatch $end
+$var parameter 32 _$ ACTIVE_H $end
+$var parameter 32 `$ ACTIVE_W $end
+$var parameter 1 a$ ADVANCE_ON_VALID_ONLY $end
+$var parameter 1 b$ DBG_COUNTERS_EN $end
+$var parameter 1 c$ ROI_EN_DEFAULT $end
+$var parameter 32 d$ ROI_X0_DEFAULT $end
+$var parameter 32 e$ ROI_X1_DEFAULT $end
+$var parameter 32 f$ ROI_Y0_DEFAULT $end
+$var parameter 32 g$ ROI_Y1_DEFAULT $end
+$var parameter 1 h$ SAT_AT_MAX $end
+$var parameter 32 i$ TILES_X $end
+$var parameter 32 j$ TILES_Y $end
+$var parameter 32 k$ TILE_SHIFT $end
+$var parameter 1 l$ USE_EOF $end
+$var parameter 1 m$ USE_EOL $end
+$var parameter 1 n$ USE_SOF $end
+$var parameter 32 o$ X_W $end
+$var parameter 32 p$ YPIX_W $end
+$var parameter 32 q$ Y_W $end
+$scope module u_lb $end
+$var wire 1 K clk $end
+$var wire 1 L en $end
+$var wire 1 ^ rst $end
+$var wire 8 r$ y_in [7:0] $end
+$var wire 6 s$ x [5:0] $end
+$var wire 1 f# v2_ready $end
+$var wire 1 X$ v1_valid $end
+$var parameter 32 t$ ACTIVE_W $end
+$var parameter 32 u$ X_W $end
+$var parameter 32 v$ Y_W $end
+$var reg 1 w$ accept $end
+$var reg 8 x$ prev_y_in_line [7:0] $end
+$var reg 1 Y$ v1_ready $end
+$var reg 1 e# v2_valid $end
+$var reg 6 y$ x_addr_in [5:0] $end
+$var reg 6 z$ x_hold [5:0] $end
+$var reg 8 {$ y_cur [7:0] $end
+$var reg 8 |$ y_left [7:0] $end
+$var reg 8 }$ y_up [7:0] $end
+$var integer 32 ~$ i [31:0] $end
+$scope function clamp_x $end
+$upscope $end
+$upscope $end
+$scope module u_xy $end
+$var wire 1 !% buf_can_take $end
+$var wire 1 K clk $end
+$var wire 1 L en $end
+$var wire 1 M eof $end
+$var wire 1 N eol $end
+$var wire 1 "% fire_in $end
+$var wire 1 #% fire_out $end
+$var wire 1 ~# frame_last $end
+$var wire 1 }# frame_start $end
+$var wire 1 |# in_roi $end
+$var wire 1 z# line_last $end
+$var wire 1 y# line_start $end
+$var wire 1 ( pix_ready $end
+$var wire 1 ] pix_valid $end
+$var wire 1 ^ rst $end
+$var wire 1 _ sof $end
+$var wire 1 q# tile_first $end
+$var wire 1 m# tile_last $end
+$var wire 1 k# tile_x_last $end
+$var wire 1 h# tile_y_last $end
+$var wire 1 Y$ v1_ready $end
+$var wire 6 $% x [5:0] $end
+$var wire 1 c# x_last $end
+$var wire 6 %% y [5:0] $end
+$var wire 1 _# y_last $end
+$var wire 2 &% y_mod [1:0] $end
+$var wire 2 '% x_mod [1:0] $end
+$var wire 3 (% tile_j_l [2:0] $end
+$var wire 6 )% tile_j [5:0] $end
+$var wire 3 *% tile_idx [2:0] $end
+$var wire 3 +% tile_i_l [2:0] $end
+$var wire 6 ,% tile_i [5:0] $end
+$var parameter 32 -% ACTIVE_H $end
+$var parameter 32 .% ACTIVE_W $end
+$var parameter 1 /% ADVANCE_ON_VALID_ONLY $end
+$var parameter 1 0% DBG_COUNTERS_EN $end
+$var parameter 1 1% ROI_EN_DEFAULT $end
+$var parameter 32 2% ROI_X0 $end
+$var parameter 32 3% ROI_X0_DEFAULT $end
+$var parameter 32 4% ROI_X1 $end
+$var parameter 32 5% ROI_X1_DEFAULT $end
+$var parameter 32 6% ROI_Y0 $end
+$var parameter 32 7% ROI_Y0_DEFAULT $end
+$var parameter 32 8% ROI_Y1 $end
+$var parameter 32 9% ROI_Y1_DEFAULT $end
+$var parameter 1 :% SAT_AT_MAX $end
+$var parameter 32 ;% TILES_X $end
+$var parameter 32 <% TILES_Y $end
+$var parameter 32 =% TILE_SHIFT $end
+$var parameter 1 >% USE_EOF $end
+$var parameter 1 ?% USE_EOL $end
+$var parameter 1 @% USE_SOF $end
+$var parameter 32 A% X_LAST_U $end
+$var parameter 32 B% X_W $end
+$var parameter 32 C% Y_LAST_U $end
+$var parameter 32 D% Y_W $end
+$var reg 1 E% eof_q $end
+$var reg 1 F% eol_q $end
+$var reg 1 %$ err_eol_mismatch $end
+$var reg 1 $$ err_sof_midframe $end
+$var reg 32 G% frame_cnt [31:0] $end
+$var reg 32 H% line_cnt [31:0] $end
+$var reg 1 I% sof_q $end
+$var reg 1 X$ v1_valid $end
+$var reg 6 J% x_q [5:0] $end
+$var reg 6 K% x_r [5:0] $end
+$var reg 6 L% x_r_adv [5:0] $end
+$var reg 6 M% y_q [5:0] $end
+$var reg 6 N% y_r [5:0] $end
+$var reg 6 O% y_r_adv [5:0] $end
+$scope function is_x_last $end
+$upscope $end
+$scope function is_y_last $end
+$upscope $end
+$scope task advance_xy $end
+$upscope $end
+$upscope $end
+$upscope $end
+$scope module u_stats_edge $end
+$var wire 1 P% bundle_valid $end
+$var wire 1 K clk $end
+$var wire 8 Q% edge_cnt [7:0] $end
+$var wire 32 R% edge_max [31:0] $end
+$var wire 32 S% edge_mean [31:0] $end
+$var wire 32 T% edge_sum [31:0] $end
+$var wire 1 U% edge_v4_ready $end
+$var wire 16 V% frame_id [15:0] $end
+$var wire 16 W% frame_id_o [15:0] $end
+$var wire 1 X% join_hold $end
+$var wire 8 Y% maxY [7:0] $end
+$var wire 8 Z% meanY [7:0] $end
+$var wire 8 [% minY [7:0] $end
+$var wire 1 r out_ready $end
+$var wire 1 | out_valid $end
+$var wire 1 W# pix_in_tile_valid $end
+$var wire 8 \% rangeY [7:0] $end
+$var wire 1 ^ rst $end
+$var wire 8 ]% stats_err_code [7:0] $end
+$var wire 1 ^% stats_hold $end
+$var wire 5 _% stats_pix_cnt_o [4:0] $end
+$var wire 1 & stats_tile_err $end
+$var wire 1 `% stats_v3_ready $end
+$var wire 12 a% sumY [11:0] $end
+$var wire 1 m# tile_last $end
+$var wire 1 X# tile_start $end
+$var wire 16 b% tile_x_idx [15:0] $end
+$var wire 16 c% tile_x_o [15:0] $end
+$var wire 16 d% tile_y_idx [15:0] $end
+$var wire 16 e% tile_y_o [15:0] $end
+$var wire 1 f# v2_ready $end
+$var wire 1 e# v2_valid $end
+$var wire 2 f% x_mod [1:0] $end
+$var wire 8 g% y_cur [7:0] $end
+$var wire 8 h% y_left [7:0] $end
+$var wire 16 i% y_meta [15:0] $end
+$var wire 16 j% y_meta_o [15:0] $end
+$var wire 2 k% y_mod [1:0] $end
+$var wire 8 l% y_up [7:0] $end
+$var wire 16 m% stats_y_meta_o [15:0] $end
+$var wire 1 n% stats_v3_valid $end
+$var wire 16 o% stats_tile_y_o [15:0] $end
+$var wire 16 p% stats_tile_x_o [15:0] $end
+$var wire 1 q% stats_tile_err_i $end
+$var wire 12 r% stats_sumY [11:0] $end
+$var wire 20 s% stats_sumSq [19:0] $end
+$var wire 8 t% stats_rangeY [7:0] $end
+$var wire 5 u% stats_pix_cnt_i [4:0] $end
+$var wire 1 v% stats_ov_sumsq $end
+$var wire 1 w% stats_ov_sum $end
+$var wire 8 x% stats_minY [7:0] $end
+$var wire 8 y% stats_meanY [7:0] $end
+$var wire 8 z% stats_maxY [7:0] $end
+$var wire 16 {% stats_frame_id_o [15:0] $end
+$var wire 8 |% stats_err_code_i [7:0] $end
+$var wire 1 }% edge_v4_valid $end
+$var wire 1 ~% edge_v2_ready $end
+$var wire 32 !& edge_sum_i [31:0] $end
+$var wire 32 "& edge_mean_i [31:0] $end
+$var wire 32 #& edge_max_i [31:0] $end
+$var wire 8 $& edge_cnt_i [7:0] $end
+$var parameter 1 %& ASSERT_ON_EDGE $end
+$var parameter 1 && ASSERT_ON_STATS $end
+$var parameter 32 '& CNT_W $end
+$var parameter 1 (& DO_SUMSQ_STATS $end
+$var parameter 32 )& EDGE_MODE $end
+$var parameter 32 *& EDGE_THR $end
+$var parameter 32 +& EDGE_W $end
+$var parameter 32 ,& SUMSQ_MAX $end
+$var parameter 32 -& SUMSQ_W $end
+$var parameter 32 .& SUM_MAX $end
+$var parameter 32 /& SUM_W $end
+$var parameter 1 0& SUPPORT_PIX_VALID_EDGE $end
+$var parameter 1 1& SUPPORT_PIX_VALID_STATS $end
+$var parameter 1 2& SUPPORT_TILE_START_EDGE $end
+$var parameter 32 3& TILE_H $end
+$var parameter 32 4& TILE_PIXELS $end
+$var parameter 32 5& TILE_W $end
+$var parameter 32 6& Y_W $end
+$scope module u_edge $end
+$var wire 1 7& accept_in $end
+$var wire 1 K clk $end
+$var wire 1 8& hit_cnt $end
+$var wire 1 9& is_tile_first $end
+$var wire 1 :& is_tile_first_xy $end
+$var wire 1 ;& pix_eff $end
+$var wire 1 W# pix_in_tile_valid $end
+$var wire 1 ^ rst $end
+$var wire 1 m# tile_last $end
+$var wire 1 X# tile_start $end
+$var wire 1 e# v2_valid $end
+$var wire 1 U% v4_ready $end
+$var wire 1 }% v4_valid $end
+$var wire 2 <& x_mod [1:0] $end
+$var wire 8 =& y_cur [7:0] $end
+$var wire 8 >& y_left [7:0] $end
+$var wire 2 ?& y_mod [1:0] $end
+$var wire 8 @& y_up [7:0] $end
+$var wire 1 ~% v2_ready $end
+$var wire 32 A& edge_sum [31:0] $end
+$var wire 32 B& edge_mean [31:0] $end
+$var wire 32 C& edge_max [31:0] $end
+$var wire 8 D& edge_cnt [7:0] $end
+$var parameter 1 E& ASSERT_ON $end
+$var parameter 32 F& CNT_W $end
+$var parameter 32 G& EDGE_W $end
+$var parameter 32 H& MEAN_W $end
+$var parameter 32 I& MODE $end
+$var parameter 1 J& SUPPORT_PIX_VALID $end
+$var parameter 1 K& SUPPORT_TILE_START $end
+$var parameter 32 L& THR $end
+$var parameter 32 M& TILE_H $end
+$var parameter 32 N& TILE_PIXELS $end
+$var parameter 32 O& TILE_W $end
+$var parameter 32 P& Y_W $end
+$var reg 8 Q& cnt_next [7:0] $end
+$var reg 8 R& cnt_r [7:0] $end
+$var reg 8 S& dx_abs [7:0] $end
+$var reg 8 T& dy_abs [7:0] $end
+$var reg 9 U& e_abs_sum [8:0] $end
+$var reg 32 V& e_for_max [31:0] $end
+$var reg 32 W& e_pix_ext [31:0] $end
+$var reg 17 X& e_sq_sum [16:0] $end
+$var reg 1 Y& e_thr_hit $end
+$var reg 32 Z& max_next [31:0] $end
+$var reg 32 [& max_r [31:0] $end
+$var reg 8 \& out_cnt [7:0] $end
+$var reg 32 ]& out_max [31:0] $end
+$var reg 32 ^& out_mean [31:0] $end
+$var reg 32 _& out_sum [31:0] $end
+$var reg 1 `& out_v $end
+$var reg 32 a& sum_next [31:0] $end
+$var reg 32 b& sum_r [31:0] $end
+$scope function calc_mean $end
+$upscope $end
+$scope begin $unm_blk_64 $end
+$var reg 8 c& m [7:0] $end
+$upscope $end
+$upscope $end
+$scope module u_stats $end
+$var wire 1 K clk $end
+$var wire 16 d& frame_id [15:0] $end
+$var wire 16 e& frame_id_o [15:0] $end
+$var wire 1 f& is_tile_first $end
+$var wire 1 g& out_hold $end
+$var wire 1 w% overflow_sum $end
+$var wire 1 v% overflow_sumsq $end
+$var wire 1 W# pix_in_tile_valid $end
+$var wire 1 h& pix_ok $end
+$var wire 1 ^ rst $end
+$var wire 20 i& sumSq [19:0] $end
+$var wire 1 m# tile_last $end
+$var wire 16 j& tile_x_idx [15:0] $end
+$var wire 16 k& tile_y_idx [15:0] $end
+$var wire 1 e# v2_valid $end
+$var wire 1 `% v3_ready $end
+$var wire 2 l& x_mod [1:0] $end
+$var wire 16 m& y_cur [15:0] $end
+$var wire 8 n& y_in [7:0] $end
+$var wire 2 o& y_mod [1:0] $end
+$var wire 16 p& y_cur_o [15:0] $end
+$var wire 1 n% v3_valid $end
+$var wire 16 q& tile_y_o [15:0] $end
+$var wire 16 r& tile_x_o [15:0] $end
+$var wire 1 q% tile_err $end
+$var wire 12 s& sumY [11:0] $end
+$var wire 8 t& rangeY [7:0] $end
+$var wire 5 u& pix_cnt_o [4:0] $end
+$var wire 8 v& minY [7:0] $end
+$var wire 8 w& meanY [7:0] $end
+$var wire 8 x& maxY [7:0] $end
+$var wire 8 y& err_code [7:0] $end
+$var parameter 1 z& ASSERT_ON $end
+$var parameter 1 {& DO_SUMSQ $end
+$var parameter 32 |& MEAN_SHIFT $end
+$var parameter 1 }& SATURATE_SUM $end
+$var parameter 1 ~& SATURATE_SUMSQ $end
+$var parameter 32 !' SUMSQ_MAX $end
+$var parameter 32 "' SUMSQ_W $end
+$var parameter 32 #' SUMSQ_W_LOCAL $end
+$var parameter 32 $' SUM_MAX $end
+$var parameter 32 %' SUM_W $end
+$var parameter 32 &' SUM_W_LOCAL $end
+$var parameter 1 '' SUPPORT_PIX_VALID $end
+$var parameter 32 (' TILE_H $end
+$var parameter 32 )' TILE_PIXELS $end
+$var parameter 32 *' TILE_W $end
+$var parameter 32 +' Y_W $end
+$var reg 8 ,' err_code_r [7:0] $end
+$var reg 16 -' fid_out_r [15:0] $end
+$var reg 1 .' in_tile $end
+$var reg 8 /' max_final [7:0] $end
+$var reg 8 0' max_out_r [7:0] $end
+$var reg 8 1' max_r [7:0] $end
+$var reg 12 2' mean_ext [11:0] $end
+$var reg 8 3' min_final [7:0] $end
+$var reg 8 4' min_out_r [7:0] $end
+$var reg 8 5' min_r [7:0] $end
+$var reg 1 6' ov_sum_out_r $end
+$var reg 1 7' ov_sum_r $end
+$var reg 1 8' ov_sumsq_out_r $end
+$var reg 1 9' ov_sumsq_r $end
+$var reg 5 :' pix_cnt [4:0] $end
+$var reg 5 ;' pix_cnt_eff [4:0] $end
+$var reg 5 <' pix_cnt_out_r [4:0] $end
+$var reg 9 =' range_ext [8:0] $end
+$var reg 12 >' sum_final [11:0] $end
+$var reg 12 ?' sum_out_r [11:0] $end
+$var reg 12 @' sum_r [11:0] $end
+$var reg 20 A' sumsq_final [19:0] $end
+$var reg 20 B' sumsq_out_r [19:0] $end
+$var reg 20 C' sumsq_r [19:0] $end
+$var reg 1 q% tile_err_r $end
+$var reg 16 D' tx_out_r [15:0] $end
+$var reg 16 E' ty_out_r [15:0] $end
+$var reg 1 n% v_out_r $end
+$var reg 12 F' y_ext_sum [11:0] $end
+$var reg 20 G' y_sq [19:0] $end
+$var reg 16 H' ycur_out_r [15:0] $end
+$scope begin G_ASSERT $end
+$upscope $end
+$upscope $end
+$upscope $end
+$upscope $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+$comment Show the parameter values. $end
+$dumpall
+b1000 +'
+b100 *'
+b10000 )'
+b100 ('
+1''
+b1100 &'
+b1100 %'
+b111111110000 $'
+b10100 #'
+b10100 "'
+b11111110000000010000 !'
+0~&
+0}&
+b100 |&
+0{&
+1z&
+b1000 P&
+b100 O&
+b10000 N&
+b100 M&
+b1000 L&
+1K&
+1J&
+b0 I&
+b100000 H&
+b100000 G&
+b1000 F&
+0E&
+b1000 6&
+b100 5&
+b10000 4&
+b100 3&
+12&
+11&
+10&
+b1100 /&
+b111111110000 .&
+b10100 -&
+b11111110000000010000 ,&
+b100000 +&
+b1000 *&
+b0 )&
+0(&
+b1000 '&
+1&&
+0%&
+b110 D%
+b111 C%
+b110 B%
+b1111 A%
+1@%
+0?%
+0>%
+b10 =%
+b10 <%
+b100 ;%
+0:%
+b111 9%
+b111 8%
+b0 7%
+b0 6%
+b1111 5%
+b1111 4%
+b0 3%
+b0 2%
+01%
+10%
+1/%
+b10000 .%
+b1000 -%
+b1000 v$
+b110 u$
+b10000 t$
+b110 q$
+b1000 p$
+b110 o$
+1n$
+0m$
+0l$
+b10 k$
+b10 j$
+b100 i$
+0h$
+b111 g$
+b0 f$
+b1111 e$
+b0 d$
+0c$
+1b$
+1a$
+b10000 `$
+b1000 _$
+b110 M$
+b1000 L$
+b110 K$
+1J$
+0I$
+0H$
+b100 G$
+b10 F$
+b10000 E$
+b100 D$
+b10 C$
+b100 B$
+1A$
+1@$
+1?$
+b1100 >$
+b111111110000 =$
+b10100 <$
+b11111110000000010000 ;$
+0:$
+b111 9$
+b0 8$
+b1111 7$
+b0 6$
+05$
+b100000 4$
+b1000 3$
+b0 2$
+01$
+10$
+b1000 /$
+1.$
+0-$
+1,$
+b10000 +$
+b1000 *$
+0,#
+b1000 +#
+b100 *#
+b10000 )#
+b10000 (#
+b10000 '#
+b11 &#
+b10 %#
+b100 $#
+b1100 ##
+1"#
+0!#
+b10000 ~"
+b100 }"
+b1111111111111111 |"
+b0 {"
+b0 z"
+b0 y"
+b0 x"
+b0 w"
+b0 v"
+b0 u"
+b0 t"
+1s"
+b100000 r"
+1q"
+b110 S"
+b1000 R"
+b110 Q"
+b100 P"
+b10 O"
+b100 N"
+b10000 M"
+b10000 L"
+b10000 K"
+b10000 J"
+b11 I"
+b100 H"
+b10 G"
+b100 F"
+b1100 E"
+b111111110000 D"
+1C"
+0B"
+b10000 A"
+b100 @"
+b100000 ?"
+1>"
+b1000 ="
+b0 <"
+b1000 ;"
+b10000 :"
+b1000 9"
+b110 J
+b1000 I
+b110 H
+b100 G
+b10 F
+b10000 E
+b100 D
+b10 C
+b100 B
+b1000 A
+b1100 @
+b111111110000 ?
+b100000000 >
+b10000 =
+b100 <
+b100000 ;
+1:
+b1000 9
+b10000 8
+b1000 7
+$end
+#0
+$dumpvars
+bx H'
+b0 G'
+b0xxxxxxxx F'
+bx E'
+bx D'
+bx C'
+bx B'
+bx A'
+bx @'
+bx ?'
+bx >'
+bx ='
+bx <'
+bx ;'
+bx :'
+x9'
+x8'
+x7'
+x6'
+bx 5'
+bx 4'
+bx 3'
+b0xxxxxxxx 2'
+bx 1'
+bx 0'
+bx /'
+x.'
+bx -'
+bx ,'
+bx y&
+bx x&
+bx w&
+bx v&
+bx u&
+bx t&
+bx s&
+bx r&
+bx q&
+bx p&
+bx o&
+bx n&
+b0xxxxxx m&
+bx l&
+b0xxxx k&
+b0xxxx j&
+bx i&
+xh&
+xg&
+xf&
+bx e&
+bx d&
+bx c&
+bx b&
+bx a&
+x`&
+bx _&
+bx ^&
+bx ]&
+bx \&
+bx [&
+bx Z&
+xY&
+bx X&
+b0xxxxxxxxx W&
+b0xxxxxxxxx V&
+bx U&
+bx T&
+bx S&
+bx R&
+bx Q&
+bx D&
+bx C&
+bx B&
+bx A&
+bx @&
+bx ?&
+bx >&
+bx =&
+bx <&
+x;&
+x:&
+x9&
+x8&
+x7&
+bx $&
+bx #&
+bx "&
+bx !&
+x~%
+x}%
+bx |%
+bx {%
+bx z%
+bx y%
+bx x%
+xw%
+xv%
+bx u%
+bx t%
+bx s%
+bx r%
+xq%
+bx p%
+bx o%
+xn%
+bx m%
+bx l%
+bx k%
+bx j%
+b0xxxxxx i%
+bx h%
+bx g%
+bx f%
+bx e%
+b0xxxx d%
+bx c%
+b0xxxx b%
+bx a%
+x`%
+bx _%
+x^%
+bx ]%
+bx \%
+bx [%
+bx Z%
+bx Y%
+xX%
+bx W%
+bx V%
+xU%
+bx T%
+bx S%
+bx R%
+bx Q%
+xP%
+b0 O%
+bx N%
+bx M%
+b0 L%
+bx K%
+bx J%
+xI%
+bx H%
+bx G%
+xF%
+xE%
+b0xxxx ,%
+bx +%
+bx *%
+b0xxxx )%
+bx (%
+bx '%
+bx &%
+bx %%
+bx $%
+x#%
+0"%
+x!%
+bx ~$
+bx }$
+bx |$
+bx {$
+bx z$
+bx y$
+bx x$
+xw$
+bx s$
+b0 r$
+bx ^$
+bx ]$
+b0xxxx \$
+bx [$
+b0xxxx Z$
+xY$
+xX$
+bx W$
+bx V$
+bx U$
+bx T$
+bx S$
+bx R$
+bx Q$
+b0 P$
+bx O$
+bx N$
+bx )$
+bx ($
+bx '$
+bx &$
+x%$
+x$$
+bx #$
+bx "$
+bx !$
+x~#
+x}#
+x|#
+bx {#
+xz#
+xy#
+bx x#
+bx w#
+bx v#
+bx u#
+bx t#
+bx s#
+bx r#
+xq#
+b0xxxx p#
+bx o#
+b0xxxx n#
+xm#
+b0xxxx l#
+xk#
+bx j#
+b0xxxx i#
+xh#
+bx g#
+xf#
+xe#
+bx d#
+xc#
+bx b#
+bx a#
+bx `#
+x_#
+bx ^#
+b0xxxxxx ]#
+bx \#
+bx [#
+bx Z#
+b0 Y#
+xX#
+xW#
+bx V#
+bx U#
+bx T#
+bx S#
+bx R#
+bx Q#
+bx P#
+bx O#
+bx N#
+bx M#
+bx L#
+bx K#
+bx J#
+bx I#
+bx H#
+bx G#
+bx F#
+xE#
+bx D#
+bx C#
+bx B#
+bx A#
+bx @#
+bx ?#
+bx >#
+bx =#
+bx <#
+bx ;#
+bx :#
+bx 9#
+bx 8#
+bx 7#
+bx 6#
+bx 5#
+bx 4#
+bx 3#
+bx 2#
+bx 1#
+bx 0#
+bx /#
+x.#
+x-#
+bx p"
+bx o"
+x

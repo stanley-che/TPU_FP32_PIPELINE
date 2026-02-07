@@ -1,0 +1,278 @@
+$date
+	Tue Jan 27 02:19:39 2026
+$end
+$version
+	Icarus Verilog
+$end
+$timescale
+	1ps
+$end
+$scope module tb_video_in_timing_if $end
+$var wire 1 ! tb_de_fall $end
+$var wire 1 " tb_de_rise $end
+$var wire 1 # tb_vs_rise $end
+$var wire 10 $ y [9:0] $end
+$var wire 11 % x [10:0] $end
+$var wire 1 & sol $end
+$var wire 1 ' sof $end
+$var wire 1 ( pix_valid $end
+$var wire 24 ) pix_rgb [23:0] $end
+$var wire 1 * eol $end
+$var wire 1 + eof $end
+$var parameter 32 , H_ACTIVE $end
+$var parameter 32 - H_BLANK $end
+$var parameter 32 . V_ACTIVE $end
+$var parameter 32 / V_BLANK $end
+$var parameter 32 0 X_W $end
+$var parameter 32 1 Y_W $end
+$var reg 1 2 clk $end
+$var reg 32 3 cyc [31:0] $end
+$var reg 1 4 de $end
+$var reg 1 5 de_p1 $end
+$var reg 1 6 de_p2 $end
+$var reg 1 7 hsync $end
+$var reg 24 8 rgb [23:0] $end
+$var reg 1 9 rst $end
+$var reg 1 : vs_p1 $end
+$var reg 1 ; vs_p2 $end
+$var reg 1 < vsync $end
+$var reg 1 = exp_in_frame $end
+$var integer 32 > exp_x [31:0] $end
+$var integer 32 ? exp_y [31:0] $end
+$var reg 1 @ seen_first_active $end
+$scope module dut $end
+$var wire 1 2 clk $end
+$var wire 1 4 de $end
+$var wire 1 A de_fall $end
+$var wire 1 B de_rise $end
+$var wire 1 7 hsync $end
+$var wire 24 C rgb [23:0] $end
+$var wire 1 9 rst $end
+$var wire 1 D vs_rise $end
+$var wire 1 < vsync $end
+$var parameter 32 E X_W $end
+$var parameter 32 F Y_W $end
+$var reg 1 G de_d $end
+$var reg 1 H de_q $end
+$var reg 1 + eof $end
+$var reg 1 * eol $end
+$var reg 1 I hs_d $end
+$var reg 1 J hs_q $end
+$var reg 1 K last_pix_valid $end
+$var reg 24 L pix_rgb [23:0] $end
+$var reg 1 ( pix_valid $end
+$var reg 24 M rgb_q [23:0] $end
+$var reg 1 ' sof $end
+$var reg 1 N sof_armed $end
+$var reg 1 & sol $end
+$var reg 1 O vs_d $end
+$var reg 1 P vs_q $end
+$var reg 11 Q x [10:0] $end
+$var reg 10 R y [9:0] $end
+$upscope $end
+$scope task drive_frame $end
+$upscope $end
+$scope task drive_line $end
+$upscope $end
+$scope task drive_pixel $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+$comment Show the parameter values. $end
+$dumpall
+b1010 F
+b1011 E
+b1010 1
+b1011 0
+b10 /
+b100 .
+b100 -
+b1000 ,
+$end
+#0
+$dumpvars
+bx R
+bx Q
+xP
+xO
+xN
+bx M
+bx L
+xK
+xJ
+xI
+xH
+xG
+xD
+b0 C
+xB
+xA
+0@
+b0 ?
+b0 >
+0=
+0<
+x;
+x:
+19
+b0 8
+07
+x6
+x5
+04
+bx 3
+02
+x+
+x*
+bx )
+x(
+x'
+x&
+bx %
+bx $
+x#
+x"
+x!
+$end
+#5000
+b0 )
+b0 L
+0(
+0A
+0B
+0D
+0#
+0!
+0"
+0G
+0I
+0O
+b0 M
+0H
+0J
+0P
+0K
+b0 $
+b0 R
+b0 %
+b0 Q
+0N
+0+
+0*
+0&
+0'
+b0 3
+0;
+0:
+06
+05
+12
+#10000
+02
+#15000
+12
+#20000
+02
+#25000
+12
+#30000
+02
+#35000
+12
+#40000
+02
+#45000
+b1 3
+09
+12
+#50000
+02
+#55000
+b10 3
+1<
+12
+#60000
+02
+#65000
+1D
+1#
+1P
+1:
+b11 3
+12
+#70000
+02
+#75000
+0#
+0D
+17
+1=
+1;
+b100 3
+1N
+1O
+0<
+12
+#80000
+02
+#85000
+1J
+0P
+0:
+b101 3
+07
+12
+#90000
+02
+#95000
+0;
+b110 3
+1I
+0O
+0J
+12
+#100000
+02
+#105000
+b1111111100000000 8
+b1111111100000000 C
+14
+0I
+b111 3
+12
+#110000
+02
+#115000
+1"
+b1111111100000000 )
+b1111111100000000 L
+1(
+1B
+b1111111100000001 8
+b1111111100000001 C
+15
+b1000 3
+b1111111100000000 M
+1H
+12
+#120000
+02
+#125000
+0B
+b1111111100000001 )
+b1111111100000001 L
+0"
+b1111111100000010 8
+b1111111100000010 C
+1G
+b1111111100000001 M
+b1 $
+b1 R
+1K
+0N
+1&
+1'
+16
+b1001 3
+b1 ?
+12
