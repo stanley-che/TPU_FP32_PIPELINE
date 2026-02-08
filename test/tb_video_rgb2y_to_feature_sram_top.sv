@@ -353,7 +353,7 @@ module tb_video_rgb2y_to_feature_sram_top;
   // Dump
   // ----------------------------
   initial begin
-    $dumpfile("tb_video_rgb2y_to_feature_sram_top.vcd");
+    $dumpfile("./vvp/tb_video_rgb2y_to_feature_sram_top.vcd");
     $dumpvars(0, tb_video_rgb2y_to_feature_sram_top);
   end
 
