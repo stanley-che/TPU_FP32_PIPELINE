@@ -219,7 +219,7 @@ module tb_tile_nb_fetch_bundle9_attn_core_m5_top_fp32;
   // VCD
   // ----------------------------
   initial begin
-    $dumpfile("tb_m5_int.vcd");
+    $dumpfile("./vvp/tb_m5_int.vcd");
     $dumpvars(0, tb_tile_nb_fetch_bundle9_attn_core_m5_top_fp32);
   end
 
