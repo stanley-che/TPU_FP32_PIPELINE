@@ -2,7 +2,7 @@
 // attn_m1_m2_chain_top.sv
 // - Chain by instances:
 //   M1: attn_score_9xD_fp32        -> score_flat
-//   M2: attn_softmax_exp2_fp32     -> w_flat   (softmax approx)
+//   M2: attn_norm_relu_fp32     -> w_flat   (softmax approx)
 // - Proper ready/valid backpressure propagation
 // ============================================================
 

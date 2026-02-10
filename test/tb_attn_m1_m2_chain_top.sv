@@ -9,12 +9,12 @@
 // NOTE:
 //   score_flat_dbg is NOT guaranteed aligned with w because M2 buffers.
 // ============================================================
+
 /*
 iverilog -g2012 -Wall \
   ./test/tb_attn_m1_m2_chain_top.sv \
   -o ./vvp/tb_chain
 vvp ./vvp/tb_chain
-
 */
 `include "./src/AMOLED/atten_core/attn_m1_m2_chain_top.sv"
 `timescale 1ns/1ps

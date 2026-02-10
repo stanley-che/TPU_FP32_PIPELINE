@@ -1,10 +1,23 @@
 // ============================================================
-// attn_score_9xD_fp32_pipe.sv  (IVERILOG-SAFE, SCALED)
-// - score[t] = dot(Q, K[t]) / sqrt(D)
-// - Includes rv_pipe_stage + rv_pipe (so no missing module)
+// attn_weighted_sum_fp32.sv  (IVERILOG-SAFE)
+// - M3: weighted sum / attention output vector
+//
+//   out[d] = sum_{t=0..TOKENS-1} w[t] * V[t][d],  d=0..D-1
+//
+// - Inputs:
+//   in_valid/in_ready
+//   w_flat  : TOKENS * FP32
+//   v_vecs  : TOKENS * D * FP32   (layout: t-major then d)
+// - Outputs:
+//   out_valid/out_ready
+//   out_vec : D * FP32
+//
+// - Notes:
+//   * ready/valid elastic
+//   * out_vec holds stable under backpressure (out_valid && !out_ready)
+//   * No shortreal, use real + local FP32 pack/unpack
 // ============================================================
-`ifndef RV_PIPE_STAGE
-`define RV_PIPE_STAGE
+
 `timescale 1ns/1ps
 `default_nettype none
 
@@ -45,12 +58,10 @@ module rv_pipe_stage #(
     end
   end
 endmodule
-`endif 
+
 // ------------------------------------------------------------
 // N-stage elastic pipe generator (STAGES can be 0 for bypass)
 // ------------------------------------------------------------
-`ifndef RV_PIPE
-`define RV_PIPE
 module rv_pipe #(
   parameter int unsigned WIDTH  = 32,
   parameter int unsigned STAGES = 1
@@ -98,28 +109,33 @@ module rv_pipe #(
     end
   endgenerate
 endmodule
-`endif
+
 // ------------------------------------------------------------
-// M1: attn_score_9xD_fp32
+// M3: attn_weighted_sum_fp32
 // ------------------------------------------------------------
-module attn_score_9xD_fp32 #(
+module attn_weighted_sum_fp32 #(
   parameter int unsigned TOKENS      = 9,
   parameter int unsigned D           = 8,
-  parameter int unsigned PIPE_STAGES = 2
+  parameter int unsigned PIPE_STAGES = 1   // >=1 (extra elastic stages)
 )(
   input  wire                       clk,
   input  wire                       rst_n,
+
   input  wire                       in_valid,
   output wire                       in_ready,
-  input  wire [D*32-1:0]            q_vec,
-  input  wire [TOKENS*D*32-1:0]     k_vecs,
+  input  wire [TOKENS*32-1:0]       w_flat,
+  input  wire [TOKENS*D*32-1:0]     v_vecs,
+
   output wire                       out_valid,
   input  wire                       out_ready,
-  output wire [TOKENS*32-1:0]       score_flat
+  output wire [D*32-1:0]            out_vec
 );
 
-  localparam int unsigned SCORE_W = TOKENS*32;
+  localparam int unsigned OUT_W = D*32;
 
+  // ----------------------------------------------------------
+  // pow2i (iverilog-safe)
+  // ----------------------------------------------------------
   function real pow2i(input integer e);
     integer i;
     real v;
@@ -133,6 +149,9 @@ module attn_score_9xD_fp32 #(
     end
   endfunction
 
+  // ----------------------------------------------------------
+  // FP32 <-> real (local)
+  // ----------------------------------------------------------
   function real fp32_to_real(input [31:0] f);
     reg sign;
     integer exp, mant;
@@ -191,16 +210,30 @@ module attn_score_9xD_fp32 #(
     end
   endfunction
 
-  // stage0 elastic
-  reg                s0_vld;
-  reg [SCORE_W-1:0]  s0_dat;
-  wire               s0_out_ready;
+  // ----------------------------------------------------------
+  // Stage0: compute-on-accept 1-deep elastic buffer
+  // ----------------------------------------------------------
+  reg              s0_vld;
+  reg [OUT_W-1:0]   s0_dat;
+  wire             s0_out_ready;
 
   assign in_ready = (~s0_vld) | s0_out_ready;
   wire do_accept  = in_valid && in_ready;
 
-  real INV_SQRT_D;
-  initial INV_SQRT_D = 1.0 / $sqrt(D);
+  // helper: slice w[t], v[t][d]
+  function automatic [31:0] get_w(input int unsigned ti);
+    begin
+      get_w = w_flat[ti*32 +: 32];
+    end
+  endfunction
+
+  function automatic [31:0] get_v(input int unsigned ti, input int unsigned di);
+    int unsigned idx;
+    begin
+      idx = (ti*D + di);
+      get_v = v_vecs[idx*32 +: 32];
+    end
+  endfunction
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -208,39 +241,43 @@ module attn_score_9xD_fp32 #(
       s0_dat <= '0;
     end else begin
       if (do_accept) begin
-        integer t, d;
-        reg [SCORE_W-1:0] score_tmp;
-        score_tmp = '0;
+        integer d, t;
+        reg [OUT_W-1:0] tmp;
 
-        for (t = 0; t < TOKENS; t = t + 1) begin
+        tmp = '0;
+
+        for (d = 0; d < D; d = d + 1) begin
           real acc;
+          real wr, vr;
           acc = 0.0;
-          for (d = 0; d < D; d = d + 1)
-            acc = acc
-              + fp32_to_real(q_vec[d*32 +: 32])
-              * fp32_to_real(k_vecs[(t*D+d)*32 +: 32]);
-
-          acc = acc * INV_SQRT_D;
-
-          score_tmp[t*32 +: 32] = real_to_fp32(acc);
+          for (t = 0; t < TOKENS; t = t + 1) begin
+            wr  = fp32_to_real(get_w(t));
+            vr  = fp32_to_real(get_v(t, d));
+            acc = acc + (wr * vr);
+          end
+          tmp[d*32 +: 32] = real_to_fp32(acc);
         end
 
-        s0_dat <= score_tmp;
+        s0_dat <= tmp;
         s0_vld <= 1'b1;
       end else if (s0_vld && s0_out_ready) begin
         s0_vld <= 1'b0;
       end
+      // else hold
     end
   end
 
+  // ----------------------------------------------------------
+  // Optional extra elastic stages
+  // ----------------------------------------------------------
   generate
     if (PIPE_STAGES <= 1) begin : g_no_pipe
       assign out_valid    = s0_vld;
       assign s0_out_ready = out_ready;
-      assign score_flat   = s0_dat;
+      assign out_vec      = s0_dat;
     end else begin : g_pipe
       rv_pipe #(
-        .WIDTH (SCORE_W),
+        .WIDTH (OUT_W),
         .STAGES(PIPE_STAGES-1)
       ) u_pipe (
         .clk       (clk),
@@ -250,7 +287,7 @@ module attn_score_9xD_fp32 #(
         .in_data   (s0_dat),
         .out_valid (out_valid),
         .out_ready (out_ready),
-        .out_data  (score_flat)
+        .out_data  (out_vec)
       );
     end
   endgenerate
