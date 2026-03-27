@@ -1,0 +1,56 @@
+{
+    "std": [
+        "std",
+        "reYIK",
+        "module",
+        1
+    ],
+    "attn_core_tile_top_fp32": [
+        "attn_core_tile_top_fp32",
+        "zka9R",
+        "module",
+        2
+    ],
+    "DW_fp32_add": [
+        "DW_fp32_add",
+        "HtIfY",
+        "module",
+        3
+    ],
+    "DW_fp32_mult": [
+        "DW_fp32_mult",
+        "r7AF3",
+        "module",
+        4
+    ],
+    "feature_sram": [
+        "feature_sram",
+        "G9nVp",
+        "module",
+        5
+    ],
+    "rv_skid_1_nodrop": [
+        "rv_skid_1_nodrop",
+        "S62k0",
+        "module",
+        6
+    ],
+    "pix_xy_feature_sram_integrated_top_0000": [
+        "pix_xy_feature_sram_integrated_top_0000",
+        "WLpy0",
+        "module",
+        7
+    ],
+    "tb_video_feature_sram_nb_attn_m5_top_fp32": [
+        "tb_video_feature_sram_nb_attn_m5_top_fp32",
+        "rKy3b",
+        "module",
+        8
+    ],
+    "...MASTER...": [
+        "SIM",
+        "amcQw",
+        "module",
+        9
+    ]
+}

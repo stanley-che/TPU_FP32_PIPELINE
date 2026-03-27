@@ -83,7 +83,7 @@ module video_rgb2y_to_feature_sram_top #(
   parameter int unsigned TILES_X    = (ACTIVE_W >> TILE_SHIFT),
   parameter int unsigned TILES_Y    = (ACTIVE_H >> TILE_SHIFT),
 
-  parameter int unsigned YPIX_W = 8,
+  parameter int unsigned YPIX_W = 10,
 
   // Y width convert: y_pix = Y >> Y_SHIFT_RIGHT
   parameter int unsigned Y_SHIFT_RIGHT =
@@ -324,7 +324,7 @@ module video_rgb2y_to_feature_sram_top #(
   wire sol_s = ev[2]; // optional / unused
   wire eol_s = ev[1];
   wire eof_s = ev[0];
-
+  /*
   logic [YPIX_W-1:0] y_pix;
   always_comb begin
     if (PACK_OUT_W <= YPIX_W) begin
@@ -333,7 +333,20 @@ module video_rgb2y_to_feature_sram_top #(
       y_pix = (Y10 >> Y_SHIFT_RIGHT);
     end
   end
+  */
+ logic [YPIX_W-1:0] y_pix;
 
+ generate
+  if (PACK_OUT_W <= YPIX_W) begin : g_y_pix_pad
+    always_comb begin
+      y_pix = {{(YPIX_W-PACK_OUT_W){1'b0}}, Y10};
+    end
+  end else begin : g_y_pix_shift
+    always_comb begin
+      y_pix = (Y10 >> Y_SHIFT_RIGHT);
+    end
+  end
+ endgenerate
   // mask (no X)
   logic sof_m, eol_m, eof_m;
   logic [YPIX_W-1:0] y_m;

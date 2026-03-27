@@ -1,0 +1,348 @@
+Command: vcs -full64 -sverilog -timescale=1ns/1ps -lca -debug_access+all -kdb +incdir+/home/stanley/stanley/TPU_FP32_PIPELINE/src \
++define+FSDB -file /home/stanley/stanley/TPU_FP32_PIPELINE/build/filelist/rtl.f /home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv \
+-top tb_video_feature_sram_nb_attn_m5_top_fp32 -o /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv \
+-l /home/stanley/stanley/TPU_FP32_PIPELINE/build/log/rtl_compile.log
+                         Chronologic VCS (TM)
+         Version T-2022.06_Full64 -- Thu Mar 26 21:22:22 2026
+
+                    Copyright (c) 1991 - 2022 Synopsys, Inc.
+   This software and the associated documentation are proprietary to Synopsys,
+ Inc. This software may only be used in accordance with the terms and conditions
+ of a written license agreement with Synopsys, Inc. All other use, reproduction,
+   or distribution of this software is strictly prohibited.  Licensed Products
+     communicate with Synopsys servers for the purpose of providing software
+    updates, detecting software piracy and verifying that customers are using
+    Licensed Products in conformity with the applicable License Key for such
+  Licensed Products. Synopsys will use information gathered in connection with
+    this process to deliver software updates and pursue software pirates and
+                                   infringers.
+
+ Inclusivity & Diversity - Visit SolvNetPlus to read the "Synopsys Statement on
+            Inclusivity and Diversity" (Refer to article 000036315 at
+                        https://solvnetplus.synopsys.com)
+
+
+Warning-[LCA_FEATURES_ENABLED] Usage warning
+  LCA features enabled by '-lca' argument on the command line.  For more 
+  information regarding list of LCA features please refer to Chapter "LCA 
+  features" in the VCS Release Notes
+
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_alpha_fp32.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_core_tile_top_fp32.sv'
+Parsing included file './src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv'.
+Parsing included file './src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv'.
+Back to file './src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv'.
+Parsing included file './src/AMOLED/atten_core/attn_norm_relu_fp32.sv'.
+Back to file './src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv'.
+Parsing included file './src/AMOLED/atten_core/attn_m3_m4_top.sv'.
+Back to file './src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_core_tile_top_fp32.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m2_chain_top.sv'
+Parsing included file './src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv'.
+
+Warning-[OPD] Override previous declaration
+./src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv, 4
+  Previously declared 
+  at:"./src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv", 4
+  This module will be overridden by the last declaration.
+  
+
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m2_chain_top.sv'.
+Parsing included file './src/AMOLED/atten_core/attn_norm_relu_fp32.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m2_chain_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv'
+Parsing included file './src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv'.
+
+Warning-[OPD] Override previous declaration
+./src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv, 4
+  Previously declared 
+  at:"./src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv", 4
+  This module will be overridden by the last declaration.
+  
+
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv'.
+Parsing included file './src/AMOLED/atten_core/attn_norm_relu_fp32.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv'.
+Parsing included file './src/AMOLED/atten_core/attn_m3_m4_top.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv'.
+
+Warning-[OPD] Override previous declaration
+/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv, 8
+  Previously declared 
+  at:"./src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv", 8
+  This module will be overridden by the last declaration.
+  
+
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m3_m4_top.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_norm_relu_fp32.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv'
+
+Warning-[OPD] Override previous declaration
+/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv, 4
+  Previously declared 
+  at:"./src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv", 4
+  This module will be overridden by the last declaration.
+  
+
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_weighted_sum_fp32.sv'
+
+Warning-[OPD] Override previous declaration
+/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_weighted_sum_fp32.sv, 185
+  Previously declared at:"./src/AMOLED/atten_core/attn_m3_m4_top.sv", 10
+  This module will be overridden by the last declaration.
+  
+
+
+Warning-[OPD] Override previous declaration
+/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_weighted_sum_fp32.sv, 219
+  Previously declared at:"./src/AMOLED/atten_core/attn_m3_m4_top.sv", 49
+  This module will be overridden by the last declaration.
+  
+
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/burst_engine.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/burst_req_if.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/burst_req_if_tileaddr_wrap.sv'
+Parsing included file './src/AMOLED/feature_sram/tile_addr_gen.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/burst_req_if_tileaddr_wrap.sv'.
+Parsing included file './src/AMOLED/feature_sram/burst_req_if.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/burst_req_if_tileaddr_wrap.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/feat_sram_burst_top.sv'
+Parsing included file './src/AMOLED/feature_sram/burst_engine.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/feat_sram_burst_top.sv'.
+Parsing included file './src/AMOLED/feature_sram/rd_assemble_fifo.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/feat_sram_burst_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/feature_sram.sv'
+Parsing included file './src/AMOLED/feature_sram/tile_feat_sram_burst_system.sv'.
+Parsing included file './src/AMOLED/feature_sram/burst_req_if_tileaddr_wrap.sv'.
+Back to file './src/AMOLED/feature_sram/tile_feat_sram_burst_system.sv'.
+Parsing included file './src/AMOLED/feature_sram/feat_sram_burst_top.sv'.
+Back to file './src/AMOLED/feature_sram/tile_feat_sram_burst_system.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/feature_sram.sv'.
+Parsing included file './src/AMOLED/feature_sram/sram_phy_wrap.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/feature_sram.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/rd_assemble_fifo.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/sram_phy_wrap.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/tile_addr_gen.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/tile_feat_sram_burst_system.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/pix_xy_feature_sram_integrated_top.sv'
+Parsing included file './src/AMOLED/tile_feature_extracter/pix_xy_feature_top.sv'.
+Parsing included file './src/AMOLED/tile_feature_extracter/pix_xy_linebuf_stats_edge_top.sv'.
+Parsing included file './src/AMOLED/tile_feature_extracter/pixel_xy_linebuf_1line_top.sv'.
+Parsing included file './src/AMOLED/tile_feature_extracter/pixel_xy_counter.sv'.
+Back to file './src/AMOLED/tile_feature_extracter/pixel_xy_linebuf_1line_top.sv'.
+Parsing included file './src/AMOLED/tile_feature_extracter/linebuf_y_1line.sv'.
+Back to file './src/AMOLED/tile_feature_extracter/pixel_xy_linebuf_1line_top.sv'.
+Back to file './src/AMOLED/tile_feature_extracter/pix_xy_linebuf_stats_edge_top.sv'.
+Parsing included file './src/AMOLED/tile_feature_extracter/tile_stats_edge_raster_4x4.sv'.
+Back to file './src/AMOLED/tile_feature_extracter/pix_xy_linebuf_stats_edge_top.sv'.
+Back to file './src/AMOLED/tile_feature_extracter/pix_xy_feature_top.sv'.
+Parsing included file './src/AMOLED/tile_feature_extracter/feature_pack_and_valid.sv'.
+Back to file './src/AMOLED/tile_feature_extracter/pix_xy_feature_top.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/pix_xy_feature_sram_integrated_top.sv'.
+Parsing included file './src/AMOLED/feature_sram/feature_sram.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/pix_xy_feature_sram_integrated_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_full_pipe_top.sv'
+Parsing included file './src/AMOLED/rgb2y_luma/rgb_coeff_mult.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_full_pipe_top.sv'.
+Parsing included file './src/AMOLED/rgb2y_luma/rgb_y_pipe_top.sv'.
+Parsing included file './src/AMOLED/rgb2y_luma/rgb_round_shift.sv'.
+Back to file './src/AMOLED/rgb2y_luma/rgb_y_pipe_top.sv'.
+Parsing included file './src/AMOLED/rgb2y_luma/rgb_sum_acc.sv'.
+Back to file './src/AMOLED/rgb2y_luma/rgb_y_pipe_top.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_full_pipe_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_luma_top.sv'
+Parsing included file './src/AMOLED/rgb2y_luma/rgb2y_full_pipe_top.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_luma_top.sv'.
+Parsing included file './src/AMOLED/rgb2y_luma/rgb2y_out_pack.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_luma_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_out_pack.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_coeff_mult.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_round_shift.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_sum_acc.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_unpack_clip.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_unpack_coeff_top.sv'
+Parsing included file './src/AMOLED/rgb2y_luma/rgb_unpack_clip.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_unpack_coeff_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_y_pipe_top.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/feature_pack_and_valid.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/linebuf_y_1line.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/pix_xy_feature_top.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/pix_xy_linebuf_stats_edge_top.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/pixel_xy_counter.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/pixel_xy_linebuf_1line_top.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/tile_stats_edge_raster_4x4.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_nb_fetch_bundle9_attn_core_m5_top_fp32.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/feature_sram_burst_reader.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/feature_sram_rd_addr_encode.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/nb_feat_bundle_assembler_9.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/nb_fetch_scheduler_9req.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_coord_clamp_3x3.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_bundle9_top_inst.sv'
+Parsing included file './src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_top_inst.sv'.
+Parsing included file './src/AMOLED/tile_neighborhood_fetch/tile_nb_fetch_3x3_to_9req_inst.sv'.
+Parsing included file './src/AMOLED/tile_neighborhood_fetch/tile_coord_clamp_3x3.sv'.
+Back to file './src/AMOLED/tile_neighborhood_fetch/tile_nb_fetch_3x3_to_9req_inst.sv'.
+Parsing included file './src/AMOLED/tile_neighborhood_fetch/nb_fetch_scheduler_9req.sv'.
+Back to file './src/AMOLED/tile_neighborhood_fetch/tile_nb_fetch_3x3_to_9req_inst.sv'.
+Back to file './src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_top_inst.sv'.
+Parsing included file './src/AMOLED/tile_neighborhood_fetch/feature_sram_rd_addr_encode.sv'.
+Back to file './src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_top_inst.sv'.
+Parsing included file './src/AMOLED/tile_neighborhood_fetch/feature_sram_burst_reader.sv'.
+Back to file './src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_top_inst.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_bundle9_top_inst.sv'.
+Parsing included file './src/AMOLED/tile_neighborhood_fetch/nb_feat_bundle_assembler_9.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_bundle9_top_inst.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_top_inst.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_nb_fetch_3x3_to_9req_inst.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_feature_sram_nb_attn_m5_top_fp32.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/active_window_tracker.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/edge_pulse_gen.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/frame_event_gen.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/sync_edge_top.sv'
+Parsing included file './src/AMOLED/video_in_timing_if/sync_sanitizer.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/sync_edge_top.sv'.
+Parsing included file './src/AMOLED/video_in_timing_if/edge_pulse_gen.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/sync_edge_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/sync_sanitizer.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_in_timing_if_top.sv'
+Parsing included file './src/AMOLED/video_in_timing_if/sync_edge_top.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_in_timing_if_top.sv'.
+Parsing included file './src/AMOLED/video_in_timing_if/active_window_tracker.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_in_timing_if_top.sv'.
+Parsing included file './src/AMOLED/video_in_timing_if/xy_counter.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_in_timing_if_top.sv'.
+Parsing included file './src/AMOLED/video_in_timing_if/frame_event_gen.sv'.
+
+Warning-[OPD] Override previous declaration
+./src/AMOLED/video_in_timing_if/frame_event_gen.sv, 5
+  Previously declared 
+  at:"/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/frame_event_gen.sv",
+  5
+  This module will be overridden by the last declaration.
+  
+
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_in_timing_if_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_xy_top.sv'
+Parsing included file './src/AMOLED/video_in_timing_if/xy_counter.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_xy_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_xy_top_sync.sv'
+Parsing included file './src/AMOLED/video_in_timing_if/xy_counter.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_xy_top_sync.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/xy_counter.sv'
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_rgb2y_integrated_top.sv'
+Parsing included file './src/AMOLED/video_in_timing_if/video_in_timing_if_top.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_rgb2y_integrated_top.sv'.
+Parsing included file './src/AMOLED/rgb2y_luma/rgb2y_luma_top.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_rgb2y_integrated_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_rgb2y_to_feature_sram_top.sv'
+Parsing included file './src/AMOLED/video_rgb2y_integrated_top.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_rgb2y_to_feature_sram_top.sv'.
+Parsing included file './src/AMOLED/pix_xy_feature_sram_integrated_top.sv'.
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_rgb2y_to_feature_sram_top.sv'.
+Parsing design file '/home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv'
+Parsing included file './src/AMOLED/video_feature_sram_nb_attn_m5_top_fp32.sv'.
+
+Warning-[OPD] Override previous declaration
+./src/AMOLED/video_feature_sram_nb_attn_m5_top_fp32.sv, 4
+  Previously declared 
+  at:"/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_feature_sram_nb_attn_m5_top_fp32.sv",
+  4
+  This module will be overridden by the last declaration.
+  
+
+Back to file '/home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv'.
+Top Level Modules:
+       tb_video_feature_sram_nb_attn_m5_top_fp32
+
+Warning-[AOUP] Attempt to override undefined parameter
+/home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv, 133
+  Attempting to override undefined parameter "elen_W", will ignore it.
+
+
+Warning-[AOUP] Attempt to override undefined parameter
+/home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv, 133
+  Attempting to override undefined parameter "tag_w", will ignore it.
+
+
+Warning-[AOUP] Attempt to override undefined parameter
+./src/AMOLED/atten_core/attn_m3_m4_top.sv, 357
+  Attempting to override undefined parameter "ELEM_W", will ignore it.
+
+
+Warning-[AOUP] Attempt to override undefined parameter
+./src/AMOLED/atten_core/attn_m3_m4_top.sv, 357
+  Attempting to override undefined parameter "FRAC_W", will ignore it.
+
+
+Warning-[AOUP] Attempt to override undefined parameter
+./src/AMOLED/atten_core/attn_m3_m4_top.sv, 357
+  Attempting to override undefined parameter "ACC_W", will ignore it.
+
+
+Warning-[AOUP] Attempt to override undefined parameter
+./src/AMOLED/atten_core/attn_m3_m4_top.sv, 374
+  Attempting to override undefined parameter "ELEM_W", will ignore it.
+
+
+Warning-[AOUP] Attempt to override undefined parameter
+./src/AMOLED/atten_core/attn_m3_m4_top.sv, 374
+  Attempting to override undefined parameter "FRAC_W", will ignore it.
+
+TimeScale is 1 ns / 1 ps
+
+Warning-[PCWM-W] Port connection width mismatch
+/home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/burst_req_if_tileaddr_wrap.sv, 90
+"tile_addr_gen #(tile_x, tile_y, sram_bus, feat_dim, elen_W, , , , ) u_addr( .tile_i (tile_i_sel),  .tile_j (tile_j_sel),  .tile_id (tile_id_unused),  .sram_addr (base_addr_wide));"
+  The following 8-bit expression is connected to 9-bit port "sram_addr" of 
+  module "tile_addr_gen", instance "u_addr".
+  Expression: base_addr_wide
+  Instantiated module defined at: 
+  "./src/AMOLED/feature_sram/tile_addr_gen.sv", 6
+  Use +lint=PCWM for more details.
+
+
+Warning-[SIOB] Select index out of bounds
+./src/AMOLED/rgb2y_luma/rgb2y_out_pack.sv, 207
+"rounded[((IN_W - OUT_W) - 1)]"
+  The select index is out of declared bounds : [10:0].
+  In module instance : u_pack 
+  In module : rgb2y_out_pack.
+
+
+Warning-[SIOB] Select index out of bounds
+./src/AMOLED/rgb2y_luma/rgb2y_out_pack.sv, 207
+"rounded[((IN_W - OUT_W) - 1)]"
+  The select index is out of declared bounds : [10:0].
+  In module instance : u_pack 
+  In module : rgb2y_out_pack.
+
+Notice: Ports coerced to inout, use -notice for details
+Starting vcs inline pass...
+
+7 modules and 0 UDP read.
+recompiling module attn_core_tile_top_fp32
+recompiling module DW_fp32_add
+recompiling module DW_fp32_mult
+recompiling module feature_sram
+recompiling module rv_skid_1_nodrop
+recompiling module pix_xy_feature_sram_integrated_top
+recompiling module tb_video_feature_sram_nb_attn_m5_top_fp32
+All of 7 modules done
+make[1]: Entering directory '/home/stanley/stanley/TPU_FP32_PIPELINE/csrc'
+rm -f _cuarc*.so _csrc*.so pre_vcsobj_*.so share_vcsobj_*.so
+if [ -x /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv ]; then chmod a-x \
+/home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv; fi
+g++  -o /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv   -no-pie  -Wl,--no-as-needed \
+-L/usr/lib/x86_64-linux-gnu -L/lib/x86_64-linux-gnu -Wl,--no-as-needed -rdynamic \
+-Wl,-rpath='$ORIGIN'/simv.daidir -Wl,-rpath=./simv.daidir -Wl,-rpath=/export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib \
+-L/export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib  -Wl,-rpath-link=./   objs/amcQw_d.o \
+_2942964_archive_1.so  SIM_l.o       rmapats_mop.o rmapats.o rmar.o rmar_nd.o  rmar_llvm_0_1.o \
+rmar_llvm_0_0.o           -lvirsim -lerrorinf -lsnpsmalloc -lvfs    -lvcsnew -lsimprofile \
+-luclinative /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/vcs_tls.o   -Wl,-whole-archive \
+-lvcsucli    -Wl,-no-whole-archive        _vcs_pli_stub_.o   /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/vcs_save_restore_new.o \
+/export/SoftWare/Synopsys/verdi/T-2022.06/share/PLI/VCS/LINUX64/pli.a -ldl  -lc -lm \
+-lpthread -ldl 
+/home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv up to date
+make[1]: Leaving directory '/home/stanley/stanley/TPU_FP32_PIPELINE/csrc'
+CPU time: 2.128 seconds to compile + .417 seconds to elab + .434 seconds to link
+Verdi KDB elaboration done and the database successfully generated: 0 error(s), 7 warning(s)

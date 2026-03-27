@@ -1,0 +1,191 @@
+current_design "top"
+
+# define your clock
+clock -name "top.cpu_clk"     -domain cpu_clk     -tag cpu_clk    -period 1.0  -edge {0 0.5}
+clock -name "top.axi_clk"     -domain axi_clk     -tag axi_clk    -period 2.5  -edge {0 1.25}
+clock -name "top.dram_clk"    -domain dram_clk    -tag dram_clk   -period 5.0  -edge {0 2.5}
+clock -name "top.rom_clk"     -domain rom_clk     -tag rom_clk    -period 50.1  -edge {0 25.05}
+
+reset -name "cpu_rst"  -value 1 -async
+reset -name "axi_rst"  -value 1 -async
+reset -name "rom_rst"  -value 1 -async
+reset -name "dram_rst"  -value 1 -async
+
+abstract_port -module TS1N16ADFPCLLLVTA128X64M4SWSHOD_data_array -ports  SLP DSLP SD PUDELAY CEB WEB A D BWEB RTSEL WTSEL Q -clock cpu_clk
+abstract_port -module TS1N16ADFPCLLLVTA128X64M4SWSHOD_tag_array -ports  SLP DSLP SD PUDELAY CEB WEB A D BWEB RTSEL WTSEL Q -clock cpu_clk
+abstract_port -module TS1N16ADFPCLLLVTA512X45M4SWSHOD -ports  SLP DSLP SD PUDELAY CEB WEB A D BWEB RTSEL WTSEL Q  -clock cpu_clk
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_arm0.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_arm0.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_arm0.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rm0.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rm0.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_rm0.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_arm1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_arm1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_arm1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rm1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rm1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_rm1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_awm1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_awm1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_awm1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_wm1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_wm1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_wm1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bm1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bm1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_bm1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_arm2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_arm2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_arm2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rm2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rm2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_rm2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_awm2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_awm2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_awm2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_wm2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_wm2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_wm2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bm2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bm2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_bm2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_arm3.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_arm3.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_arm3.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rm3.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rm3.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_rm3.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_awm3.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_awm3.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_awm3.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_wm3.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_wm3.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_wm3.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bm3.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bm3.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_bm3.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ars0.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ars0.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ars0.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rs0.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rs0.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_rs0.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ars1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ars1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ars1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rs1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rs1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_rs1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_aws1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ws1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs1.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs1.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_bs1.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ars2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ars2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ars2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rs2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rs2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_rs2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_aws2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ws2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs2.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs2.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_bs2.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws3.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws3.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_aws3.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws3.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws3.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ws3.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs3.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs3.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_bs3.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws4.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws4.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_aws4.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws4.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws4.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ws4.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs4.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs4.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_bs4.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ars5.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ars5.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ars5.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rs5.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_rs5.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_rs5.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws5.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws5.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_aws5.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws5.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws5.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ws5.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs5.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs5.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_bs5.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws6.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_aws6.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_aws6.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws6.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_ws6.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_ws6.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs6.u_fifo1.u_sync_r2w.wrptr2 -value 0
+define_tag -tag initState -name top.u_AXI.u_axi_sync_bs6.u_fifo1.u_sync_w2r.rwptr2 -value 0
+quasi_static              -name top.u_AXI.u_axi_sync_bs6.u_fifo1.u_fifomem.MEM
+
+define_tag -tag initState -name top.u_WDT_wrapper.u_sync_WTO.D -value 0
+define_tag -tag initState -name top.u_WDT_wrapper.u_sync_WTO.Q -value 0

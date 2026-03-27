@@ -61,7 +61,7 @@ module xy_counter #(
   wire do_frame_start = vs_rise;
   wire do_line_start  = de_rise;
   wire do_line_end    = de_fall;
-
+  logic cut_pending;
   wire do_y_inc = (Y_INC_ON_DE_RISE) ? de_rise : de_fall;
   wire do_x_inc = pix_valid;
 
@@ -185,7 +185,7 @@ module xy_counter #(
   // -----------------------------
   // suppress de_fall that is caused by vs_rise cutting an active line
   // -----------------------------
-  logic cut_pending;
+  //logic cut_pending;
 
   always_ff @(posedge clk) begin
     if (rst) begin

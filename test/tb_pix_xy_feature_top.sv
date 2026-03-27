@@ -34,7 +34,7 @@ module tb_pix_xy_feature_top;
   localparam int unsigned TILES_Y = (ACTIVE_H >> TILE_SHIFT); // 2
   localparam int unsigned EXP_TILES = TILES_X * TILES_Y;      // 8
 
-  localparam int unsigned YPIX_W = 8;
+  localparam int unsigned YPIX_W = 10;
   localparam int unsigned FEAT_W = 16;
   localparam int unsigned FEAT_DIM = 4;
 

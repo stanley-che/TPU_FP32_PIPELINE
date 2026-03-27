@@ -1,0 +1,24 @@
+*design* DebussyLib (btIdent Verdi_T-2022.06)
+Command arguments:  -lib  /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir/work  -saveLevel  -elab  /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir/kdb  -simflow  -simdir  /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir/kdb_libs  -topfile  /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir/.elabcomTopFile  -ssv  -ssy  -Lf  work  +disable_message+C00380+C00381  +disable_message+C00388+C00389  -SNPS_ELABCOM  -saveElab 
+
+*Warning* Failed to find the specified instance parameter elen_W in the master video_sram_nb_attn_m5_top_fp32
+"/home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv", 133: 
+
+*Warning* Failed to find the specified instance parameter tag_w in the master video_sram_nb_attn_m5_top_fp32
+"/home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv", 133: 
+
+*Warning* Failed to find the specified instance parameter ELEM_W in the master attn_weighted_sum_fp32
+"./src/AMOLED/atten_core/attn_m3_m4_top.sv", 357: 
+
+*Warning* Failed to find the specified instance parameter FRAC_W in the master attn_weighted_sum_fp32
+"./src/AMOLED/atten_core/attn_m3_m4_top.sv", 357: 
+
+*Warning* Failed to find the specified instance parameter ACC_W in the master attn_weighted_sum_fp32
+"./src/AMOLED/atten_core/attn_m3_m4_top.sv", 357: 
+
+*Warning* Failed to find the specified instance parameter ELEM_W in the master attn_alpha_fp32
+"./src/AMOLED/atten_core/attn_m3_m4_top.sv", 374: 
+
+*Warning* Failed to find the specified instance parameter FRAC_W in the master attn_alpha_fp32
+"./src/AMOLED/atten_core/attn_m3_m4_top.sv", 374: 
+Total	0 error(s),   7 warning(s)

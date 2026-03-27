@@ -32,7 +32,7 @@ module tb_pix_xy_linebuf_stats_edge_top;
   localparam int unsigned TILES_X    = (ACTIVE_W >> TILE_SHIFT); // 4
   localparam int unsigned TILES_Y    = (ACTIVE_H >> TILE_SHIFT); // 2
 
-  localparam int unsigned YPIX_W = 8;
+  localparam int unsigned YPIX_W = 10;
 
   localparam int unsigned TILE_W = 4;
   localparam int unsigned TILE_H = 4;

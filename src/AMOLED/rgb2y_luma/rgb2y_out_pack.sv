@@ -79,7 +79,7 @@ module rgb2y_out_pack #(
   // ----------------------------
   // pack/clip function (unsigned)
   // ----------------------------
-  function automatic [OUT_W-1:0] do_pack_y(input logic [IN_W-1:0] yin);
+  /*function automatic [OUT_W-1:0] do_pack_y(input logic [IN_W-1:0] yin);
     logic [IN_W:0]      rounded;   // +1 for carry
     logic [OUT_W-1:0]   ytrunc;
     logic [OUT_W-1:0]   ysat;
@@ -121,8 +121,132 @@ module rgb2y_out_pack #(
       do_pack_y = yclip;
     end
   endfunction
+*/
+/*
+function automatic [OUT_W-1:0] do_pack_y(input logic [IN_W-1:0] yin);
+    logic [IN_W:0] rounded;
+    logic [OUT_W-1:0] ytrunc;
+    logic [OUT_W-1:0] ysat;
+    logic [OUT_W-1:0] yclip;
+    logic [IN_W:0] round_add;
+begin
+    round_add = '0;
 
-  // ----------------------------
+    // default: exact width / truncate LSBs
+    if (OUT_W >= IN_W)
+        ytrunc = {{(OUT_W-IN_W){1'b0}}, yin};
+    else
+        ytrunc = yin[OUT_W-1:0];
+
+    // rounding only when IN_W > OUT_W
+    if (IN_W > OUT_W) begin
+        if (USE_ROUND) begin
+            round_add[IN_W-OUT_W-1] = 1'b1;
+            rounded = {1'b0, yin} + round_add;
+            ytrunc  = rounded[OUT_W-1:0];
+        end
+    end
+
+    // saturation to OUT_W max (unsigned)
+    if (USE_SAT) begin
+        if (IN_W > OUT_W) begin
+            if (|yin[IN_W-1:OUT_W])
+                ysat = {OUT_W{1'b1}};
+            else
+                ysat = ytrunc;
+        end
+        else begin
+            ysat = ytrunc;
+        end
+    end
+    else begin
+        ysat = ytrunc;
+    end
+
+    // programmable clip
+    if (USE_CLIP && clip_en) begin
+        if (ysat < clip_min)
+            yclip = clip_min;
+        else if (ysat > clip_max)
+            yclip = clip_max;
+        else
+            yclip = ysat;
+    end
+    else begin
+        yclip = ysat;
+    end
+
+    do_pack_y = yclip;
+end
+endfunction
+*/
+
+function automatic [OUT_W-1:0] do_pack_y(input logic [IN_W-1:0] yin);
+    integer k;
+    logic [IN_W:0] rounded;
+    logic [OUT_W-1:0] ytrunc;
+    logic [OUT_W-1:0] ysat;
+    logic [OUT_W-1:0] yclip;
+    logic overflow;
+begin
+    rounded  = {1'b0, yin};
+    overflow = 1'b0;
+
+    // default truncate / zero-extend
+    ytrunc = '0;
+    for (k = 0; k < OUT_W; k = k + 1) begin
+        if (k < IN_W)
+            ytrunc[k] = yin[k];
+        else
+            ytrunc[k] = 1'b0;
+    end
+
+    // rounding only when IN_W > OUT_W
+    if (USE_ROUND && (IN_W > OUT_W)) begin
+        rounded = {1'b0, yin};
+        rounded[IN_W-OUT_W-1] = rounded[IN_W-OUT_W-1] | 1'b1;
+
+        for (k = 0; k < OUT_W; k = k + 1)
+            ytrunc[k] = rounded[k];
+    end
+
+    // saturation only when upper bits exist
+    if (USE_SAT) begin
+        if (IN_W > OUT_W) begin
+            overflow = 1'b0;
+            for (k = OUT_W; k < IN_W; k = k + 1)
+                overflow = overflow | yin[k];
+
+            if (overflow)
+                ysat = {OUT_W{1'b1}};
+            else
+                ysat = ytrunc;
+        end
+        else begin
+            ysat = ytrunc;
+        end
+    end
+    else begin
+        ysat = ytrunc;
+    end
+
+    // programmable clip
+    if (USE_CLIP && clip_en) begin
+        if (ysat < clip_min)
+            yclip = clip_min;
+        else if (ysat > clip_max)
+            yclip = clip_max;
+        else
+            yclip = ysat;
+    end
+    else begin
+        yclip = ysat;
+    end
+
+    do_pack_y = yclip;
+end
+endfunction
+// ----------------------------
   // stage0 computed payload
   // ----------------------------
   logic [OUT_W-1:0] y0;
@@ -155,11 +279,12 @@ module rgb2y_out_pack #(
   logic [STAGES-1:0]     v_r;
   logic [PAY_W-1:0]      p_r [0:STAGES-1];
   logic [STAGES-1:0]     rdy;   // stage-ready to accept from previous stage
-  integer i;
+  //integer i;
 
   // ready propagation (combinational)
   always @* begin
     // last stage ready if downstream ready or empty
+	integer i;
     rdy[STAGES-1] = out_ready | ~v_r[STAGES-1];
 
     // backwards: stage i ready if empty or next stage ready
@@ -180,6 +305,7 @@ module rgb2y_out_pack #(
 
   // pipeline register update
   always_ff @(posedge clk or posedge rst) begin
+    integer i;
     if (rst) begin
       v_r <= '0;
       for (i=0; i<STAGES; i=i+1) begin

@@ -1,40 +1,198 @@
-// ============================================================
-// attn_weighted_sum_fp32.sv  (IVERILOG-SAFE)
-// - M3: weighted sum / attention output vector
-//
-//   out[d] = sum_{t=0..TOKENS-1} w[t] * V[t][d],  d=0..D-1
-//
-// - Inputs:
-//   in_valid/in_ready
-//   w_flat  : TOKENS * FP32
-//   v_vecs  : TOKENS * D * FP32   (layout: t-major then d)
-// - Outputs:
-//   out_valid/out_ready
-//   out_vec : D * FP32
-//
-// - Notes:
-//   * ready/valid elastic
-//   * out_vec holds stable under backpressure (out_valid && !out_ready)
-//   * No shortreal, use real + local FP32 pack/unpack
-// ============================================================
-
 `timescale 1ns/1ps
 `default_nettype none
+module DW_fp32_add (
+    input  wire [31:0] a,
+    input  wire [31:0] b,
+    output reg  [31:0] z
+);
+    reg        sign_a, sign_b, sign_z;
+    reg [7:0]  exp_a, exp_b, exp_big, exp_small, exp_z;
+    reg [22:0] frac_a, frac_b;
+    reg [23:0] mant_a, mant_b;
+    reg [23:0] mant_big, mant_small;
+    reg        sign_big, sign_small;
 
-// ------------------------------------------------------------
-// Generic 1-deep elastic stage (ready/valid, holds on stall)
-// ------------------------------------------------------------
+    reg [7:0]  exp_diff;
+    reg [24:0] mant_small_shifted;
+    reg [24:0] mant_sum;
+    reg [24:0] mant_diff;
+    reg [24:0] mant_norm;
+
+    integer i;
+
+    always @(*) begin
+        sign_a = a[31];
+        sign_b = b[31];
+        exp_a  = a[30:23];
+        exp_b  = b[30:23];
+        frac_a = a[22:0];
+        frac_b = b[22:0];
+
+        // zero shortcut
+        if (exp_a == 8'd0 && frac_a == 23'd0) begin
+            z = b;
+        end
+        else if (exp_b == 8'd0 && frac_b == 23'd0) begin
+            z = a;
+        end
+        else begin
+            // simplified: assume normal numbers only
+            mant_a = {1'b1, frac_a};
+            mant_b = {1'b1, frac_b};
+
+            // compare magnitude
+            if ({exp_a, mant_a} >= {exp_b, mant_b}) begin
+                exp_big   = exp_a;
+                exp_small = exp_b;
+                mant_big  = mant_a;
+                mant_small= mant_b;
+                sign_big  = sign_a;
+                sign_small= sign_b;
+            end
+            else begin
+                exp_big   = exp_b;
+                exp_small = exp_a;
+                mant_big  = mant_b;
+                mant_small= mant_a;
+                sign_big  = sign_b;
+                sign_small= sign_a;
+            end
+
+            exp_diff = exp_big - exp_small;
+
+            if (exp_diff >= 8'd24)
+                mant_small_shifted = 25'd0;
+            else
+                mant_small_shifted = {1'b0, mant_small} >> exp_diff;
+
+            if (sign_big == sign_small) begin
+                // same sign => add
+                mant_sum = {1'b0, mant_big} + mant_small_shifted;
+
+                if (mant_sum[24]) begin
+                    exp_z    = exp_big + 8'd1;
+                    mant_norm= mant_sum >> 1;
+                end
+                else begin
+                    exp_z    = exp_big;
+                    mant_norm= mant_sum;
+                end
+
+                sign_z = sign_big;
+
+                if (exp_z >= 8'hFF)
+                    z = {sign_z, 8'hFE, 23'h7FFFFF};
+                else
+                    z = {sign_z, exp_z, mant_norm[22:0]};
+            end
+            else begin
+                // different sign => subtract
+                mant_diff = {1'b0, mant_big} - mant_small_shifted;
+                sign_z    = sign_big;
+
+                if (mant_diff == 25'd0) begin
+                    z = 32'd0;
+                end
+                else begin
+                    exp_z    = exp_big;
+                    mant_norm= mant_diff;
+
+                    // normalize left
+                    for (i = 0; i < 24; i = i + 1) begin
+                        if (mant_norm[23] == 1'b0 && exp_z > 8'd0) begin
+                            mant_norm = mant_norm << 1;
+                            exp_z     = exp_z - 8'd1;
+                        end
+                    end
+
+                    if (exp_z == 8'd0)
+                        z = 32'd0;
+                    else
+                        z = {sign_z, exp_z, mant_norm[22:0]};
+                end
+            end
+        end
+    end
+
+endmodule
+
+module DW_fp32_mult (
+    input  wire [31:0] a,
+    input  wire [31:0] b,
+    output reg  [31:0] z
+);
+    reg        sign_a, sign_b, sign_z;
+    reg [7:0]  exp_a, exp_b;
+    reg [22:0] frac_a, frac_b;
+
+    reg [23:0] mant_a, mant_b;
+    reg [47:0] mant_prod;
+
+    reg [8:0]  exp_sum;
+    reg [7:0]  exp_z;
+    reg [22:0] frac_z;
+
+    always @(*) begin
+        sign_a = a[31];
+        sign_b = b[31];
+        exp_a  = a[30:23];
+        exp_b  = b[30:23];
+        frac_a = a[22:0];
+        frac_b = b[22:0];
+
+        sign_z = sign_a ^ sign_b;
+
+        // zero handling
+        if ((exp_a == 8'd0 && frac_a == 23'd0) ||
+            (exp_b == 8'd0 && frac_b == 23'd0)) begin
+            z = 32'd0;
+        end
+        else begin
+            // simplified: assume normal numbers only
+            mant_a = {1'b1, frac_a};
+            mant_b = {1'b1, frac_b};
+
+            mant_prod = mant_a * mant_b;   // 24x24 -> 48 bits
+            exp_sum   = exp_a + exp_b - 8'd127;
+
+            // normalization
+            if (mant_prod[47]) begin
+                // product in [2.0, 4.0)
+                exp_z  = exp_sum[7:0] + 8'd1;
+                frac_z = mant_prod[46:24]; // drop hidden 1
+            end
+            else begin
+                // product in [1.0, 2.0)
+                exp_z  = exp_sum[7:0];
+                frac_z = mant_prod[45:23]; // drop hidden 1
+            end
+
+            // simplified overflow / underflow
+            if (exp_sum[8] == 1'b1) begin
+                z = 32'd0; // underflow => zero
+            end
+            else if (exp_z >= 8'hFF) begin
+                z = {sign_z, 8'hFE, 23'h7FFFFF}; // saturate max finite
+            end
+            else begin
+                z = {sign_z, exp_z, frac_z};
+            end
+        end
+    end
+
+endmodule
+
 module rv_pipe_stage #(
   parameter int unsigned WIDTH = 32
 )(
-  input  wire                  clk,
-  input  wire                  rst_n,
-  input  wire                  in_valid,
-  output wire                  in_ready,
-  input  wire [WIDTH-1:0]      in_data,
-  output wire                  out_valid,
-  input  wire                  out_ready,
-  output wire [WIDTH-1:0]      out_data
+  input  wire              clk,
+  input  wire              rst_n,
+  input  wire              in_valid,
+  output wire              in_ready,
+  input  wire [WIDTH-1:0]  in_data,
+  output wire              out_valid,
+  input  wire              out_ready,
+  output wire [WIDTH-1:0]  out_data
 );
   reg                 vld;
   reg [WIDTH-1:0]     dat;
@@ -46,7 +204,7 @@ module rv_pipe_stage #(
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       vld <= 1'b0;
-      dat <= '0;
+      dat <= {WIDTH{1'b0}};
     end else begin
       if (in_valid && in_ready) begin
         dat <= in_data;
@@ -54,26 +212,22 @@ module rv_pipe_stage #(
       end else if (vld && out_ready) begin
         vld <= 1'b0;
       end
-      // else hold
     end
   end
 endmodule
 
-// ------------------------------------------------------------
-// N-stage elastic pipe generator (STAGES can be 0 for bypass)
-// ------------------------------------------------------------
 module rv_pipe #(
   parameter int unsigned WIDTH  = 32,
   parameter int unsigned STAGES = 1
 )(
-  input  wire                  clk,
-  input  wire                  rst_n,
-  input  wire                  in_valid,
-  output wire                  in_ready,
-  input  wire [WIDTH-1:0]      in_data,
-  output wire                  out_valid,
-  input  wire                  out_ready,
-  output wire [WIDTH-1:0]      out_data
+  input  wire              clk,
+  input  wire              rst_n,
+  input  wire              in_valid,
+  output wire              in_ready,
+  input  wire [WIDTH-1:0]  in_data,
+  output wire              out_valid,
+  input  wire              out_ready,
+  output wire [WIDTH-1:0]  out_data
 );
   generate
     if (STAGES == 0) begin : g_bypass
@@ -81,8 +235,8 @@ module rv_pipe #(
       assign out_valid = in_valid;
       assign out_data  = in_data;
     end else begin : g_pipe
-      wire [STAGES:0]  vld;
-      wire [STAGES:0]  rdy;
+      wire [STAGES:0] vld;
+      wire [STAGES:0] rdy;
       wire [WIDTH-1:0] dat [0:STAGES];
 
       assign vld[0]   = in_valid;
@@ -110,13 +264,10 @@ module rv_pipe #(
   endgenerate
 endmodule
 
-// ------------------------------------------------------------
-// M3: attn_weighted_sum_fp32
-// ------------------------------------------------------------
 module attn_weighted_sum_fp32 #(
   parameter int unsigned TOKENS      = 9,
   parameter int unsigned D           = 8,
-  parameter int unsigned PIPE_STAGES = 1   // >=1 (extra elastic stages)
+  parameter int unsigned PIPE_STAGES = 1
 )(
   input  wire                       clk,
   input  wire                       rst_n,
@@ -133,94 +284,14 @@ module attn_weighted_sum_fp32 #(
 
   localparam int unsigned OUT_W = D*32;
 
-  // ----------------------------------------------------------
-  // pow2i (iverilog-safe)
-  // ----------------------------------------------------------
-  function real pow2i(input integer e);
-    integer i;
-    real v;
-    begin
-      v = 1.0;
-      if (e >= 0)
-        for (i = 0; i < e; i = i + 1) v = v * 2.0;
-      else
-        for (i = 0; i < (-e); i = i + 1) v = v / 2.0;
-      pow2i = v;
-    end
-  endfunction
-
-  // ----------------------------------------------------------
-  // FP32 <-> real (local)
-  // ----------------------------------------------------------
-  function real fp32_to_real(input [31:0] f);
-    reg sign;
-    integer exp, mant;
-    real frac, val;
-    begin
-      sign = f[31];
-      exp  = f[30:23];
-      mant = f[22:0];
-
-      if (exp == 0) begin
-        if (mant == 0) val = 0.0;
-        else begin
-          frac = mant / 8388608.0;
-          val  = frac * pow2i(-126);
-        end
-      end else if (exp == 255) begin
-        val = (mant == 0) ? 1.0e30 : 0.0;
-      end else begin
-        frac = 1.0 + (mant / 8388608.0);
-        val  = frac * pow2i(exp - 127);
-      end
-
-      fp32_to_real = sign ? -val : val;
-    end
-  endfunction
-
-  function [31:0] real_to_fp32(input real r);
-    reg sign;
-    real a, v;
-    integer e, exp_i, mant_i;
-    real frac;
-    reg [31:0] out;
-    begin
-      sign = (r < 0.0);
-      a    = sign ? -r : r;
-      out  = 32'h0;
-
-      if (a == 0.0) begin
-        out = 32'h0;
-      end else begin
-        v = a; e = 0;
-        while (v >= 2.0) begin v = v / 2.0; e = e + 1; end
-        while (v <  1.0) begin v = v * 2.0; e = e - 1; end
-        exp_i = e + 127;
-
-        frac   = v - 1.0;
-        mant_i = integer'(frac * 8388608.0 + 0.5);
-        if (mant_i >= 8388608) begin
-          mant_i = 0;
-          exp_i  = exp_i + 1;
-        end
-        out = {sign, exp_i[7:0], mant_i[22:0]};
-      end
-
-      real_to_fp32 = out;
-    end
-  endfunction
-
-  // ----------------------------------------------------------
-  // Stage0: compute-on-accept 1-deep elastic buffer
-  // ----------------------------------------------------------
-  reg              s0_vld;
+  // ========= Stage0 elastic =========
+  reg               s0_vld;
   reg [OUT_W-1:0]   s0_dat;
-  wire             s0_out_ready;
+  wire              s0_out_ready;
 
   assign in_ready = (~s0_vld) | s0_out_ready;
-  wire do_accept  = in_valid && in_ready;
+  wire do_accept = in_valid && in_ready;
 
-  // helper: slice w[t], v[t][d]
   function automatic [31:0] get_w(input int unsigned ti);
     begin
       get_w = w_flat[ti*32 +: 32];
@@ -230,46 +301,56 @@ module attn_weighted_sum_fp32 #(
   function automatic [31:0] get_v(input int unsigned ti, input int unsigned di);
     int unsigned idx;
     begin
-      idx = (ti*D + di);
+      idx   = ti*D + di;
       get_v = v_vecs[idx*32 +: 32];
     end
   endfunction
 
+  // ========= combinational FP32 MAC =========
+  // Requires Synopsys DesignWare
+  // ========= combinational FP32 MAC (no Synopsys DW) =========
+wire [OUT_W-1:0] mac_out_comb;
+
+genvar d, t;
+generate
+  for (d = 0; d < D; d = d + 1) begin : G_D
+    wire [31:0] prod [0:TOKENS-1];
+    wire [31:0] sum  [0:TOKENS];
+
+    assign sum[0] = 32'h00000000; // FP32 0.0
+
+    for (t = 0; t < TOKENS; t = t + 1) begin : G_T
+      DW_fp32_mult u_mul (
+        .a(get_w(t)),
+        .b(get_v(t, d)),
+        .z(prod[t])
+      );
+
+      DW_fp32_add u_add (
+        .a(sum[t]),
+        .b(prod[t]),
+        .z(sum[t+1])
+      );
+    end
+
+    assign mac_out_comb[d*32 +: 32] = sum[TOKENS];
+  end
+endgenerate
+
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       s0_vld <= 1'b0;
-      s0_dat <= '0;
+      s0_dat <= {OUT_W{1'b0}};
     end else begin
       if (do_accept) begin
-        integer d, t;
-        reg [OUT_W-1:0] tmp;
-
-        tmp = '0;
-
-        for (d = 0; d < D; d = d + 1) begin
-          real acc;
-          real wr, vr;
-          acc = 0.0;
-          for (t = 0; t < TOKENS; t = t + 1) begin
-            wr  = fp32_to_real(get_w(t));
-            vr  = fp32_to_real(get_v(t, d));
-            acc = acc + (wr * vr);
-          end
-          tmp[d*32 +: 32] = real_to_fp32(acc);
-        end
-
-        s0_dat <= tmp;
+        s0_dat <= mac_out_comb;
         s0_vld <= 1'b1;
       end else if (s0_vld && s0_out_ready) begin
         s0_vld <= 1'b0;
       end
-      // else hold
     end
   end
 
-  // ----------------------------------------------------------
-  // Optional extra elastic stages
-  // ----------------------------------------------------------
   generate
     if (PIPE_STAGES <= 1) begin : g_no_pipe
       assign out_valid    = s0_vld;

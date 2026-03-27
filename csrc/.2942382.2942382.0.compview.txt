@@ -1,0 +1,9 @@
+{"vcs1":{"timestamp_begin":1774531342.755065854, "rt":1.66, "ut":1.57, "st":0.41}}
+{"vcselab":{"timestamp_begin":1774531344.575833776, "rt":0.37, "ut":0.24, "st":0.12}}
+{"link":{"timestamp_begin":1774531345.052813261, "rt":0.28, "ut":0.21, "st":0.09}}
+{"SNPS_VCS_INTERNAL_ROOT_START_TIME": 1774531341.671544592}
+{"VCS_COMP_START_TIME": 1774531341.671544592}
+{"VCS_COMP_END_TIME": 1774531345.588422161}
+{"VCS_USER_OPTIONS": "-full64 -sverilog -timescale=1ns/1ps -lca -debug_access+all -kdb +incdir+/home/stanley/stanley/TPU_FP32_PIPELINE/src +define+FSDB -file /home/stanley/stanley/TPU_FP32_PIPELINE/build/filelist/rtl.f /home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv -top tb_video_feature_sram_nb_attn_m5_top_fp32 -o /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv -l /home/stanley/stanley/TPU_FP32_PIPELINE/build/log/rtl_compile.log"}
+{"vcs1": {"peak_mem": 2942964}}
+{"stitch_vcselab": {"peak_mem": 2943035}}

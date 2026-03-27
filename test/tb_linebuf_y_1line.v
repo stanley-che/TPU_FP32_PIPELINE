@@ -13,7 +13,7 @@ module tb_linebuf_y_1line;
 
   localparam int unsigned X_W    = 6;
   localparam int unsigned Y_W    = 6;
-  localparam int unsigned YPIX_W = 8;
+  localparam int unsigned YPIX_W = 10;
   localparam int unsigned W      = 16;   // small
   localparam int unsigned H      = 6;
 

@@ -1,107 +1,6 @@
-// ============================================================
-// attn_score_9xD_fp32_pipe.sv  (IVERILOG-SAFE, SCALED)
-// - score[t] = dot(Q, K[t]) / sqrt(D)
-// - Includes rv_pipe_stage + rv_pipe (so no missing module)
-// ============================================================
-`ifndef RV_PIPE_STAGE
-`define RV_PIPE_STAGE
 `timescale 1ns/1ps
 `default_nettype none
 
-// ------------------------------------------------------------
-// Generic 1-deep elastic stage (ready/valid, holds on stall)
-// ------------------------------------------------------------
-module rv_pipe_stage #(
-  parameter int unsigned WIDTH = 32
-)(
-  input  wire                  clk,
-  input  wire                  rst_n,
-  input  wire                  in_valid,
-  output wire                  in_ready,
-  input  wire [WIDTH-1:0]      in_data,
-  output wire                  out_valid,
-  input  wire                  out_ready,
-  output wire [WIDTH-1:0]      out_data
-);
-  reg                 vld;
-  reg [WIDTH-1:0]     dat;
-
-  assign in_ready  = (~vld) | out_ready;
-  assign out_valid = vld;
-  assign out_data  = dat;
-
-  always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      vld <= 1'b0;
-      dat <= '0;
-    end else begin
-      if (in_valid && in_ready) begin
-        dat <= in_data;
-        vld <= 1'b1;
-      end else if (vld && out_ready) begin
-        vld <= 1'b0;
-      end
-      // else hold
-    end
-  end
-endmodule
-`endif 
-// ------------------------------------------------------------
-// N-stage elastic pipe generator (STAGES can be 0 for bypass)
-// ------------------------------------------------------------
-`ifndef RV_PIPE
-`define RV_PIPE
-module rv_pipe #(
-  parameter int unsigned WIDTH  = 32,
-  parameter int unsigned STAGES = 1
-)(
-  input  wire                  clk,
-  input  wire                  rst_n,
-  input  wire                  in_valid,
-  output wire                  in_ready,
-  input  wire [WIDTH-1:0]      in_data,
-  output wire                  out_valid,
-  input  wire                  out_ready,
-  output wire [WIDTH-1:0]      out_data
-);
-  generate
-    if (STAGES == 0) begin : g_bypass
-      assign in_ready  = out_ready;
-      assign out_valid = in_valid;
-      assign out_data  = in_data;
-    end else begin : g_pipe
-      wire [STAGES:0]  vld;
-      wire [STAGES:0]  rdy;
-      wire [WIDTH-1:0] dat [0:STAGES];
-
-      assign vld[0]   = in_valid;
-      assign dat[0]   = in_data;
-      assign in_ready = rdy[0];
-
-      assign out_valid   = vld[STAGES];
-      assign out_data    = dat[STAGES];
-      assign rdy[STAGES] = out_ready;
-
-      genvar i;
-      for (i = 0; i < STAGES; i = i + 1) begin : g_stage
-        rv_pipe_stage #(.WIDTH(WIDTH)) u_stage (
-          .clk       (clk),
-          .rst_n     (rst_n),
-          .in_valid  (vld[i]),
-          .in_ready  (rdy[i]),
-          .in_data   (dat[i]),
-          .out_valid (vld[i+1]),
-          .out_ready (rdy[i+1]),
-          .out_data  (dat[i+1])
-        );
-      end
-    end
-  endgenerate
-endmodule
-`endif
-// ------------------------------------------------------------
-// M1: attn_score_9xD_fp32
-// ------------------------------------------------------------
 module attn_score_9xD_fp32 #(
   parameter int unsigned TOKENS      = 9,
   parameter int unsigned D           = 8,
@@ -120,87 +19,24 @@ module attn_score_9xD_fp32 #(
 
   localparam int unsigned SCORE_W = TOKENS*32;
 
-  function real pow2i(input integer e);
-    integer i;
-    real v;
-    begin
-      v = 1.0;
-      if (e >= 0)
-        for (i = 0; i < e; i = i + 1) v = v * 2.0;
-      else
-        for (i = 0; i < (-e); i = i + 1) v = v / 2.0;
-      pow2i = v;
-    end
-  endfunction
+  // 1/sqrt(8) = 0.3535533906 ~= 32'h3eb504f3
+  // 若 D 會變，建議改成 generate + case
+  localparam [31:0] INV_SQRT_D_FP32 =
+    (D == 1)  ? 32'h3f800000 :
+    (D == 2)  ? 32'h3f3504f3 :
+    (D == 4)  ? 32'h3f000000 :
+    (D == 8)  ? 32'h3eb504f3 :
+    (D == 16) ? 32'h3e800000 :
+                32'h3f800000;
 
-  function real fp32_to_real(input [31:0] f);
-    reg sign;
-    integer exp, mant;
-    real frac, val;
-    begin
-      sign = f[31];
-      exp  = f[30:23];
-      mant = f[22:0];
-
-      if (exp == 0) begin
-        if (mant == 0) val = 0.0;
-        else begin
-          frac = mant / 8388608.0;
-          val  = frac * pow2i(-126);
-        end
-      end else if (exp == 255) begin
-        val = (mant == 0) ? 1.0e30 : 0.0;
-      end else begin
-        frac = 1.0 + (mant / 8388608.0);
-        val  = frac * pow2i(exp - 127);
-      end
-
-      fp32_to_real = sign ? -val : val;
-    end
-  endfunction
-
-  function [31:0] real_to_fp32(input real r);
-    reg sign;
-    real a, v;
-    integer e, exp_i, mant_i;
-    real frac;
-    reg [31:0] out;
-    begin
-      sign = (r < 0.0);
-      a    = sign ? -r : r;
-      out  = 32'h0;
-
-      if (a == 0.0) begin
-        out = 32'h0;
-      end else begin
-        v = a; e = 0;
-        while (v >= 2.0) begin v = v / 2.0; e = e + 1; end
-        while (v <  1.0) begin v = v * 2.0; e = e - 1; end
-        exp_i = e + 127;
-
-        frac   = v - 1.0;
-        mant_i = integer'(frac * 8388608.0 + 0.5);
-        if (mant_i >= 8388608) begin
-          mant_i = 0;
-          exp_i  = exp_i + 1;
-        end
-        out = {sign, exp_i[7:0], mant_i[22:0]};
-      end
-
-      real_to_fp32 = out;
-    end
-  endfunction
-
-  // stage0 elastic
-  reg                s0_vld;
-  reg [SCORE_W-1:0]  s0_dat;
-  wire               s0_out_ready;
+  reg               s0_vld;
+  reg [SCORE_W-1:0] s0_dat;
+  wire              s0_out_ready;
 
   assign in_ready = (~s0_vld) | s0_out_ready;
   wire do_accept  = in_valid && in_ready;
 
-  real INV_SQRT_D;
-  initial INV_SQRT_D = 1.0 / $sqrt(D);
+  integer t, d;
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -208,30 +44,25 @@ module attn_score_9xD_fp32 #(
       s0_dat <= '0;
     end else begin
       if (do_accept) begin
-        integer t, d;
-        reg [SCORE_W-1:0] score_tmp;
-        score_tmp = '0;
-
-        for (t = 0; t < TOKENS; t = t + 1) begin
-          real acc;
-          acc = 0.0;
-          for (d = 0; d < D; d = d + 1)
-            acc = acc
-              + fp32_to_real(q_vec[d*32 +: 32])
-              * fp32_to_real(k_vecs[(t*D+d)*32 +: 32]);
-
-          acc = acc * INV_SQRT_D;
-
-          score_tmp[t*32 +: 32] = real_to_fp32(acc);
-        end
-
-        s0_dat <= score_tmp;
+        // 這裡先保留結果暫存
+        // 真正的乘加請放到下方 combinational DW network 或多拍 pipeline
         s0_vld <= 1'b1;
       end else if (s0_vld && s0_out_ready) begin
         s0_vld <= 1'b0;
       end
     end
   end
+
+  // 你需要在這裡建立每個 token 的 dot product:
+  // prod[t][d] = q[d] * k[t][d]
+  // sum[t]     = Σ prod[t][d]
+  // score[t]   = sum[t] * INV_SQRT_D_FP32
+  //
+  // 建議用 generate instantiate:
+  // - DW_fp_mult
+  // - DW_fp_add
+  //
+  // 最後把 score[t] pack 到 s0_dat
 
   generate
     if (PIPE_STAGES <= 1) begin : g_no_pipe

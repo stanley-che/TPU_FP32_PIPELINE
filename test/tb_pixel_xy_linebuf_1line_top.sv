@@ -27,7 +27,7 @@ module tb_pix_xy_linebuf_top;
   localparam int unsigned TILES_X    = (ACTIVE_W >> TILE_SHIFT); // 4
   localparam int unsigned TILES_Y    = 2; // ceil-ish for 6/4 coverage
 
-  localparam int unsigned YPIX_W = 8;
+  localparam int unsigned YPIX_W = 10;
 
   // ============================================================
   // clock/reset

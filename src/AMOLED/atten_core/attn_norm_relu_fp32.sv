@@ -1,224 +1,136 @@
-// ============================================================
-// attn_softmax_exp2_fp32.sv  (IVERILOG-SAFE)
-// - Softmax approximation via exp2 (no exp(), no LUT required)
-//   1) m = max(score[0..TOKENS-1])
-//   2) x[t] = clamp(score[t] - m, [-XCLAMP, 0])    // <= 0
-//   3) y[t] = x[t] * LOG2E                          // convert e^x -> 2^(x*log2(e))
-//   4) a[t] = exp2_approx(y[t]) = 2^I * 2^F         // y = I + F, I integer, F in [0,1)
-//   5) w[t] = a[t] / sum(a[t])
-//   - if sum == 0 -> uniform (1/TOKENS)
-// - real + local FP32 pack/unpack
-// - ready/valid elastic, output holds under backpressure
-// ============================================================
+`ifndef ATTN_SOFTMAX_EXP2_FX_SV
+`define ATTN_SOFTMAX_EXP2_FX_SV
 
 `timescale 1ns/1ps
 `default_nettype none
 
 module attn_softmax_exp2_fp32 #(
-  parameter int unsigned TOKENS      = 9,
-  parameter int unsigned PIPE_STAGES = 1,    // >=1 (extra elastic stages)
-  parameter real         XCLAMP      = 8.0   // clamp x=(s-m) to [-XCLAMP,0]
+  parameter integer TOKENS      = 9,
+  parameter integer ELEM_W      = 16,   // fixed-point width
+  parameter integer FRAC_W      = 12,   // Q4.12
+  parameter integer ACC_W       = 24,   // sum width
+  parameter integer PIPE_STAGES = 1
 )(
-  input  wire                    clk,
-  input  wire                    rst_n,
+  input  wire                            clk,
+  input  wire                            rst_n,
 
-  // input
-  input  wire                    in_valid,
-  output wire                    in_ready,
-  input  wire [TOKENS*32-1:0]    score_flat,
+  input  wire                            in_valid,
+  output wire                            in_ready,
+  input  wire [TOKENS*ELEM_W-1:0]        score_flat,
 
-  // output
-  output wire                    out_valid,
-  input  wire                    out_ready,
-  output wire [TOKENS*32-1:0]    w_flat
+  output wire                            out_valid,
+  input  wire                            out_ready,
+  output wire [TOKENS*ELEM_W-1:0]        w_flat
 );
 
-  localparam int unsigned W_W = TOKENS*32;
+  localparam integer W_W = TOKENS * ELEM_W;
 
-  // constants
-  localparam real LOG2E = 1.4426950408889634; // log2(e)
-  localparam real LN2   = 0.6931471805599453; // ln(2)
+  // log2(e) in Q4.12 ~= 1.442695 * 4096 = 5909
+  localparam signed [15:0] LOG2E_Q = 16'sd5909;
 
-  // ----------------------------------------------------------
-  // pow2i (iverilog-safe): 2^e for integer e
-  // ----------------------------------------------------------
-  function real pow2i(input integer e);
-    integer i;
-    real v;
+  // ------------------------------------------------------------
+  // 2^(-f), f in [0,1), 16-entry LUT, Q0.12
+  // index = frac[FRAC_W-1 -: 4]
+  // ------------------------------------------------------------
+  function [ELEM_W-1:0] exp2_neg_frac_lut;
+    input [3:0] idx;
     begin
-      v = 1.0;
-      if (e >= 0)
-        for (i = 0; i < e; i = i + 1) v = v * 2.0;
-      else
-        for (i = 0; i < (-e); i = i + 1) v = v / 2.0;
-      pow2i = v;
+      case (idx)
+        4'd0:  exp2_neg_frac_lut = 16'd4096; // 1.0000
+        4'd1:  exp2_neg_frac_lut = 16'd3922; // ~0.9576
+        4'd2:  exp2_neg_frac_lut = 16'd3756; // ~0.9170
+        4'd3:  exp2_neg_frac_lut = 16'd3597; // ~0.8780
+        4'd4:  exp2_neg_frac_lut = 16'd3444; // ~0.8409
+        4'd5:  exp2_neg_frac_lut = 16'd3298; // ~0.8050
+        4'd6:  exp2_neg_frac_lut = 16'd3158; // ~0.7710
+        4'd7:  exp2_neg_frac_lut = 16'd3024; // ~0.7384
+        4'd8:  exp2_neg_frac_lut = 16'd2896; // ~0.7071
+        4'd9:  exp2_neg_frac_lut = 16'd2773; // ~0.6771
+        4'd10: exp2_neg_frac_lut = 16'd2656; // ~0.6484
+        4'd11: exp2_neg_frac_lut = 16'd2543; // ~0.6209
+        4'd12: exp2_neg_frac_lut = 16'd2436; // ~0.5946
+        4'd13: exp2_neg_frac_lut = 16'd2333; // ~0.5694
+        4'd14: exp2_neg_frac_lut = 16'd2234; // ~0.5453
+        4'd15: exp2_neg_frac_lut = 16'd2140; // ~0.5221
+        default: exp2_neg_frac_lut = 16'd4096;
+      endcase
     end
   endfunction
 
-  // ----------------------------------------------------------
-  // FP32 <-> real (local)
-  // ----------------------------------------------------------
-  function real fp32_to_real(input [31:0] f);
-    reg sign;
-    integer exp, mant;
-    real frac, val;
-    begin
-      sign = f[31];
-      exp  = f[30:23];
-      mant = f[22:0];
-
-      if (exp == 0) begin
-        if (mant == 0) val = 0.0;
-        else begin
-          frac = mant / 8388608.0;
-          val  = frac * pow2i(-126);
-        end
-      end else if (exp == 255) begin
-        val = (mant == 0) ? 1.0e30 : 0.0;
-      end else begin
-        frac = 1.0 + (mant / 8388608.0);
-        val  = frac * pow2i(exp - 127);
-      end
-
-      fp32_to_real = sign ? -val : val;
-    end
-  endfunction
-
-  function [31:0] real_to_fp32(input real r);
-    reg sign;
-    real a, v;
-    integer e, exp_i, mant_i;
-    real frac;
-    reg [31:0] out;
-    begin
-      sign = (r < 0.0);
-      a    = sign ? -r : r;
-      out  = 32'h0;
-
-      if (a == 0.0) begin
-        out = 32'h0;
-      end else begin
-        v = a; e = 0;
-        while (v >= 2.0) begin v = v / 2.0; e = e + 1; end
-        while (v <  1.0) begin v = v * 2.0; e = e - 1; end
-        exp_i = e + 127;
-
-        if (exp_i <= 0) begin
-          frac   = a / pow2i(-126);
-          mant_i = integer'(frac * 8388608.0 + 0.5);
-          if (mant_i < 0) mant_i = 0;
-          if (mant_i > 8388607) mant_i = 8388607;
-          out = {sign, 8'h00, mant_i[22:0]};
-        end else if (exp_i >= 255) begin
-          out = {sign, 8'hFF, 23'h0};
-        end else begin
-          frac   = v - 1.0;
-          mant_i = integer'(frac * 8388608.0 + 0.5);
-          if (mant_i >= 8388608) begin
-            mant_i = 0;
-            exp_i  = exp_i + 1;
-            if (exp_i >= 255) out = {sign, 8'hFF, 23'h0};
-            else              out = {sign, exp_i[7:0], mant_i[22:0]};
-          end else begin
-            out = {sign, exp_i[7:0], mant_i[22:0]};
-          end
-        end
-      end
-      real_to_fp32 = out;
-    end
-  endfunction
-
-  // ----------------------------------------------------------
-  // exp2_frac(F) for F in [0,1):
-  //   2^F = e^(F ln2) ~ 1 + z + z^2/2 + z^3/6 , z = F*ln2
-  // ----------------------------------------------------------
-  function real exp2_frac(input real F);
-    real z, z2, z3;
-    begin
-      z  = F * LN2;
-      z2 = z * z;
-      z3 = z2 * z;
-      exp2_frac = 1.0 + z + (z2 * 0.5) + (z3 * (1.0/6.0));
-    end
-  endfunction
-
-  // ----------------------------------------------------------
-  // exp2_approx(y): y real (can be negative)
-  // y = I + F, I=floor(y), F in [0,1)
-  // exp2(y) = 2^I * 2^F
-  // ----------------------------------------------------------
-  function real exp2_approx(input real y);
-    integer I_trunc;
-    integer I_floor;
-    real F;
-    begin
-      I_trunc = integer'(y); // trunc toward 0
-      if ((y < 0.0) && (y != I_trunc)) I_floor = I_trunc - 1;
-      else                            I_floor = I_trunc;
-
-      F = y - I_floor; // [0,1)
-      exp2_approx = pow2i(I_floor) * exp2_frac(F);
-    end
-  endfunction
-
-  // ----------------------------------------------------------
-  // Stage0: compute softmax-exp2 on accept
-  // ----------------------------------------------------------
-  reg              s0_vld;
-  reg [W_W-1:0]    s0_dat;
-  wire             s0_out_ready;
+  // ------------------------------------------------------------
+  // optional rv pipe uses existing rv_pipe in your project
+  // ------------------------------------------------------------
+  reg                 s0_vld;
+  reg [W_W-1:0]       s0_dat;
+  wire                s0_out_ready;
 
   assign in_ready = (~s0_vld) | s0_out_ready;
-  wire do_accept  = in_valid && in_ready;
+
+  integer i;
+
+  reg signed [ELEM_W-1:0] score   [0:TOKENS-1];
+  reg signed [ELEM_W-1:0] max_s;
+  reg signed [ELEM_W-1:0] delta_s;
+
+  reg signed [31:0] y_q;          // Q4.12 after *log2(e)
+  reg [ELEM_W-1:0]  frac_term;
+  integer           int_part;
+  reg [ELEM_W-1:0]  a_val [0:TOKENS-1];
+  reg [ACC_W-1:0]   sum_a;
+  reg [W_W-1:0]     tmp_out;
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       s0_vld <= 1'b0;
-      s0_dat <= '0;
+      s0_dat <= {W_W{1'b0}};
     end else begin
-      if (do_accept) begin
-        integer t;
-        real s [0:TOKENS-1];
-        real m;
-        real x, y;
-        real a [0:TOKENS-1];
-        real sum;
-        reg [W_W-1:0] tmp;
-
+      if (in_valid && in_ready) begin
         // unpack
-        for (t = 0; t < TOKENS; t = t + 1)
-          s[t] = fp32_to_real(score_flat[t*32 +: 32]);
+        for (i = 0; i < TOKENS; i = i + 1)
+          score[i] = $signed(score_flat[i*ELEM_W +: ELEM_W]);
 
         // max
-        m = s[0];
-        for (t = 1; t < TOKENS; t = t + 1)
-          if (s[t] > m) m = s[t];
-
-        // exp2 + sum
-        sum = 0.0;
-        for (t = 0; t < TOKENS; t = t + 1) begin
-          x = s[t] - m;               // <= 0
-          if (x < -XCLAMP) x = -XCLAMP;
-          if (x >  0.0)    x =  0.0;
-
-          y = x * LOG2E;              // <= 0
-          a[t] = exp2_approx(y);       // > 0
-          sum = sum + a[t];
+        max_s = $signed(score_flat[0 +: ELEM_W]);
+        for (i = 1; i < TOKENS; i = i + 1) begin
+          if ($signed(score_flat[i*ELEM_W +: ELEM_W]) > max_s)
+            max_s = $signed(score_flat[i*ELEM_W +: ELEM_W]);
         end
 
-        // normalize
-        tmp = '0;
-        if (sum == 0.0) begin
-          real u;
-          u = 1.0 / TOKENS;
-          for (t = 0; t < TOKENS; t = t + 1)
-            tmp[t*32 +: 32] = real_to_fp32(u);
+        // exp approx and sum
+        sum_a = {ACC_W{1'b0}};
+        for (i = 0; i < TOKENS; i = i + 1) begin
+          delta_s = max_s - $signed(score_flat[i*ELEM_W +: ELEM_W]); // >=0 ideally
+
+          // y = delta * log2(e), still Q4.12
+          y_q = (delta_s * LOG2E_Q) >>> FRAC_W;
+
+          if (y_q < 0)
+            y_q = 0;
+
+          int_part  = y_q >>> FRAC_W;
+          frac_term = exp2_neg_frac_lut(y_q[FRAC_W-1 -: 4]); // Q0.12
+
+          if (int_part >= ELEM_W) begin
+            a_val[i] = {ELEM_W{1'b0}};
+          end else begin
+            a_val[i] = frac_term >> int_part; // 2^(-I) * 2^(-F)
+          end
+
+          sum_a = sum_a + a_val[i];
+        end
+
+        // normalize -> w in Q0.12
+        tmp_out = {W_W{1'b0}};
+        if (sum_a == 0) begin
+          // uniform = (1<<FRAC_W)/TOKENS
+          for (i = 0; i < TOKENS; i = i + 1)
+            tmp_out[i*ELEM_W +: ELEM_W] = (1 << FRAC_W) / TOKENS;
         end else begin
-          for (t = 0; t < TOKENS; t = t + 1)
-            tmp[t*32 +: 32] = real_to_fp32(a[t] / sum);
+          for (i = 0; i < TOKENS; i = i + 1)
+            tmp_out[i*ELEM_W +: ELEM_W] = (a_val[i] << FRAC_W) / sum_a;
         end
 
-        s0_dat <= tmp;
+        s0_dat <= tmp_out;
         s0_vld <= 1'b1;
       end else if (s0_vld && s0_out_ready) begin
         s0_vld <= 1'b0;
@@ -226,9 +138,6 @@ module attn_softmax_exp2_fp32 #(
     end
   end
 
-  // ----------------------------------------------------------
-  // Optional extra elastic stages
-  // ----------------------------------------------------------
   generate
     if (PIPE_STAGES <= 1) begin : g_no_pipe
       assign out_valid    = s0_vld;
@@ -254,3 +163,4 @@ module attn_softmax_exp2_fp32 #(
 endmodule
 
 `default_nettype wire
+`endif

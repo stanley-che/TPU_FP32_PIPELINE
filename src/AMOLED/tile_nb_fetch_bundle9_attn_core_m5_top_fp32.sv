@@ -1,21 +1,3 @@
-// ============================================================
-// tile_nb_fetch_bundle9_attn_core_m5_top_fp32.sv  (IVERILOG-SAFE)
-// - One-module integration:
-//
-//   (A) tile_nb_feature_fetch_3x3_bundle9_top_inst : center -> {kv0..kv8,q_vec,out_group_tag}
-//   (B) attn_core_tile_top_fp32                    : (Q,K,V,tag) -> alpha_fp32 (+ out_tag)
-//
-// Assumption:
-// - FEAT_W == D*32  (e.g. 256 == 8*32), so each kvX is a FP32 vector of length D.
-// - K and V both use kv tokens (typical "KV" feature). If you want V different, change mapping.
-//
-// Notes:
-// - Fetch side uses rst (active-high) + en.
-// - Attn side uses rst_n (active-low).
-// - This top derives rst = ~rst_n and gates center_valid/out_ready with en.
-// ============================================================
-`include "./src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_bundle9_top_inst.sv"
-`include "./src/AMOLED/atten_core/attn_core_tile_top_fp32.sv"
 `timescale 1ns/1ps
 `default_nettype none
 
@@ -23,115 +5,115 @@ module tile_nb_fetch_bundle9_attn_core_m5_top_fp32 #(
   // ----------------------------
   // Neighborhood fetch params
   // ----------------------------
-  parameter int unsigned TILES_X = 320,
-  parameter int unsigned TILES_Y = 180,
+  parameter integer TILES_X = 320,
+  parameter integer TILES_Y = 180,
 
-  parameter int unsigned TAG_W   = 16,
-  parameter int unsigned IDX_W   = 4,
+  parameter integer TAG_W   = 16,
+  parameter integer IDX_W   = 4,
 
-  parameter int unsigned FEAT_W         = 256,
-  parameter int unsigned MEM_W          = 64,
-  parameter int unsigned BASE_ADDR_WORD = 0,
+  parameter integer FEAT_W         = 256,
+  parameter integer MEM_W          = 64,
+  parameter integer BASE_ADDR_WORD = 0,
 
-  parameter int unsigned BANKS          = 1,
-  parameter int unsigned ADDR_W         = 32,
-  parameter int unsigned READ_LATENCY   = 1,
-  parameter bit          USE_RTAG       = 0,
+  parameter integer BANKS          = 1,
+  parameter integer ADDR_W         = 32,
+  parameter integer READ_LATENCY   = 1,
+  parameter integer USE_RTAG       = 0,
 
-  parameter bit          Q_FROM_CENTER_IDX4 = 1'b1,
+  parameter integer Q_FROM_CENTER_IDX4 = 1,
 
   // ----------------------------
   // Attention (M5) params
   // ----------------------------
-  parameter int unsigned TOKENS          = 9,
-  parameter int unsigned D               = 8,
+  parameter integer TOKENS         = 9,
+  parameter integer D              = 8,
 
-  parameter int unsigned M1_PIPE_STAGES  = 2,
-  parameter int unsigned M2_PIPE_STAGES  = 1,
-  parameter int unsigned M3_PIPE_STG     = 1,
-  parameter int unsigned M4_PIPE_STG     = 1,
+  parameter integer M1_PIPE_STAGES = 2,
+  parameter integer M2_PIPE_STAGES = 1,
+  parameter integer M3_PIPE_STG    = 1,
+  parameter integer M4_PIPE_STG    = 1,
 
-  parameter int unsigned W_PIPE_STAGES   = 1,
-  parameter int unsigned V_FIFO_DEPTH    = 16,
+  parameter integer W_PIPE_STAGES  = 1,
+  parameter integer V_FIFO_DEPTH   = 16,
 
-  parameter int unsigned ALPHA_MODE      = 1,
-  parameter real         ALPHA_SCALE     = 1.0,
-  parameter real         ALPHA_BIAS      = 0.0,
-  parameter real         ALPHA_SIG_A     = 1.0,
+  parameter integer ALPHA_MODE     = 1,
 
   // Tag pass-through inside M5
-  parameter bit          TAG_EN          = 1'b1,
-  parameter int unsigned TAG_FIFO_DEPTH  = 32
+  parameter integer TAG_EN         = 1,
+  parameter integer TAG_FIFO_DEPTH = 32
 )(
-  input  wire                         clk,
-  input  wire                         rst_n,
-  input  wire                         en,
+  input  logic clk,
+  input  logic rst_n,
+  input  logic en,
 
   // ----------------------------
   // Center tile request
   // ----------------------------
-  input  wire                         center_valid,
-  output wire                         center_ready,
-  input  wire [$clog2(TILES_Y)-1:0]    center_i,
-  input  wire [$clog2(TILES_X)-1:0]    center_j,
-  input  wire [TAG_W-1:0]             center_tag,
+  input  logic                        center_valid,
+  output logic                        center_ready,
+  input  logic [$clog2(TILES_Y)-1:0]  center_i,
+  input  logic [$clog2(TILES_X)-1:0]  center_j,
+  input  logic [TAG_W-1:0]            center_tag,
 
   // ----------------------------
   // SRAM read command (per beat)
   // ----------------------------
-  output wire                         mem_rd_valid,
-  input  wire                         mem_rd_ready,
-  output wire [ADDR_W-1:0]            mem_addr,
-  output wire [((BANKS<=1)?1:$clog2(BANKS))-1:0] mem_bank,
-  output wire [TAG_W-1:0]             mem_tag,
+  output logic                        mem_rd_valid,
+  input  logic                        mem_rd_ready,
+  output logic [ADDR_W-1:0]           mem_addr,
+  output logic [((BANKS<=1)?1:$clog2(BANKS))-1:0] mem_bank,
+  output logic [TAG_W-1:0]            mem_tag,
 
   // ----------------------------
   // SRAM read return
   // ----------------------------
-  input  wire                         mem_rvalid,
-  input  wire [MEM_W-1:0]             mem_rdata,
-  input  wire [TAG_W-1:0]             mem_rtag,
+  input  logic                        mem_rvalid,
+  input  logic [MEM_W-1:0]            mem_rdata,
+  input  logic [TAG_W-1:0]            mem_rtag,
 
   // ----------------------------
   // Final output (M5 alpha)
   // ----------------------------
-  output wire                         out_valid,
-  input  wire                         out_ready,
-  output wire [31:0]                  alpha_fp32,
-  output wire [D*32-1:0]              out_vec_dbg,
-  output wire [TAG_W-1:0]             out_tag,
+  output logic                        out_valid,
+  input  logic                        out_ready,
+  output logic [31:0]                 alpha_fp32,
+  output logic [D*32-1:0]             out_vec_dbg,
+  output logic [TAG_W-1:0]            out_tag,
 
   // ----------------------------
   // Debug (optional)
   // ----------------------------
-  output wire                         sched_busy,
-  output wire                         sched_done_pulse,
-  output wire                         bundle_done_pulse,
-  output wire [8:0]                   nb_is_center,
+  output logic                        sched_busy,
+  output logic                        sched_done_pulse,
+  output logic                        bundle_done_pulse,
+  output logic [8:0]                  nb_is_center,
 
-  output wire [TOKENS*32-1:0]         score_flat_dbg,
-  output wire [TOKENS*32-1:0]         w_flat_dbg
+  output logic [TOKENS*32-1:0]        score_flat_dbg,
+  output logic [TOKENS*32-1:0]        w_flat_dbg
 );
 
   // ----------------------------
   // Reset adaptation
   // ----------------------------
-  wire rst = ~rst_n;
-  wire go  = en && rst_n;
+  logic rst;
+  logic go;
+
+  assign rst = ~rst_n;
+  assign go  = en & rst_n;
 
   // ----------------------------
   // Fetch + bundle outputs
   // ----------------------------
-  wire                 b_valid;
-  wire                 b_ready;
+  logic               b_valid;
+  logic               b_ready;
 
-  wire [FEAT_W-1:0]     kv0,kv1,kv2,kv3,kv4,kv5,kv6,kv7,kv8;
-  wire [9*FEAT_W-1:0]   kv_bus;        // waveform only
-  wire [FEAT_W-1:0]     q_feat_vec;    // FEAT_W (=D*32)
-  wire [TAG_W-1:IDX_W]  out_group_tag;
+  logic [FEAT_W-1:0]  kv0, kv1, kv2, kv3, kv4, kv5, kv6, kv7, kv8;
+  logic [9*FEAT_W-1:0] kv_bus;
+  logic [FEAT_W-1:0]   q_feat_vec;
+  logic [TAG_W-IDX_W-1:0] out_group_tag;
 
-  // Gate center_valid into fetch by en (optional safety)
-  wire center_valid_g = go && center_valid;
+  logic center_valid_g;
+  assign center_valid_g = go & center_valid;
 
   tile_nb_feature_fetch_3x3_bundle9_top_inst #(
     .TILES_X(TILES_X),
@@ -149,7 +131,7 @@ module tile_nb_fetch_bundle9_attn_core_m5_top_fp32 #(
   ) u_fetch_bundle (
     .clk(clk),
     .rst(rst),
-    .en (en),
+    .en(en),
 
     .center_valid(center_valid_g),
     .center_ready(center_ready),
@@ -186,13 +168,14 @@ module tile_nb_fetch_bundle9_attn_core_m5_top_fp32 #(
   // ----------------------------
   // Map FEAT vectors -> Attention Q/K/V
   // ----------------------------
-  // Expect FEAT_W == D*32
-  wire [D*32-1:0] q_vec_attn = q_feat_vec[D*32-1:0];
+  logic [D*32-1:0] q_vec_attn;
+  logic [TOKENS*D*32-1:0] k_vecs_attn;
+  logic [TOKENS*D*32-1:0] v_vecs_attn;
+  logic [TAG_W-1:0] in_tag_attn;
+  logic attn_in_ready;
 
-  wire [TOKENS*D*32-1:0] k_vecs_attn;
-  wire [TOKENS*D*32-1:0] v_vecs_attn;
+  assign q_vec_attn = q_feat_vec[D*32-1:0];
 
-  // token0 in LSB ... token8 in MSB
   assign k_vecs_attn[0*D*32 +: D*32] = kv0[D*32-1:0];
   assign k_vecs_attn[1*D*32 +: D*32] = kv1[D*32-1:0];
   assign k_vecs_attn[2*D*32 +: D*32] = kv2[D*32-1:0];
@@ -203,42 +186,31 @@ module tile_nb_fetch_bundle9_attn_core_m5_top_fp32 #(
   assign k_vecs_attn[7*D*32 +: D*32] = kv7[D*32-1:0];
   assign k_vecs_attn[8*D*32 +: D*32] = kv8[D*32-1:0];
 
-  // Use same kv as V by default (KV feature). Change here if needed.
   assign v_vecs_attn = k_vecs_attn;
 
-  // Tag into M5: use group tag (shift back IDX_W zeros)
-  wire [TAG_W-1:0] in_tag_attn = {out_group_tag, {IDX_W{1'b0}}};
+  assign in_tag_attn = {out_group_tag, {IDX_W{1'b0}}};
 
-  // ----------------------------
-  // Connect bundle handshake -> attn handshake
-  // ----------------------------
-  // Bundle out_valid/out_ready connect to attn in_valid/in_ready
-  wire attn_in_ready;
   assign b_ready = attn_in_ready;
 
   // ----------------------------
   // M5 Attention core
   // ----------------------------
+  // 注意：
+  // 這裡故意不再 override real parameter
+  // 讓 child module 用它自己的 default 值
   attn_core_tile_top_fp32 #(
-    .TOKENS         (TOKENS),
-    .D              (D),
-
-    .M1_PIPE_STAGES (M1_PIPE_STAGES),
-    .M2_PIPE_STAGES (M2_PIPE_STAGES),
-    .M3_PIPE_STG    (M3_PIPE_STG),
-    .M4_PIPE_STG    (M4_PIPE_STG),
-
-    .W_PIPE_STAGES  (W_PIPE_STAGES),
-    .V_FIFO_DEPTH   (V_FIFO_DEPTH),
-
-    .ALPHA_MODE     (ALPHA_MODE),
-    .ALPHA_SCALE    (ALPHA_SCALE),
-    .ALPHA_BIAS     (ALPHA_BIAS),
-    .ALPHA_SIG_A    (ALPHA_SIG_A),
-
-    .TAG_EN         (TAG_EN),
-    .TAG_W          (TAG_W),
-    .TAG_FIFO_DEPTH (TAG_FIFO_DEPTH)
+    .TOKENS(TOKENS),
+    .D(D),
+    .M1_PIPE_STAGES(M1_PIPE_STAGES),
+    .M2_PIPE_STAGES(M2_PIPE_STAGES),
+    .M3_PIPE_STG(M3_PIPE_STG),
+    .M4_PIPE_STG(M4_PIPE_STG),
+    .W_PIPE_STAGES(W_PIPE_STAGES),
+    .V_FIFO_DEPTH(V_FIFO_DEPTH),
+    .ALPHA_MODE(ALPHA_MODE),
+    .TAG_EN(TAG_EN),
+    .TAG_W(TAG_W),
+    .TAG_FIFO_DEPTH(TAG_FIFO_DEPTH)
   ) u_m5 (
     .clk(clk),
     .rst_n(rst_n),

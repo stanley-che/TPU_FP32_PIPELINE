@@ -1,0 +1,5 @@
+Command Line: /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/bin/elabcom -logdir /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir/elabcomLog -simvdaidir /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir -lib /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir/work -saveLevel -elab /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir/kdb -simflow -simdir /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir/kdb_libs -topfile /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir/.elabcomTopFile -ssv -ssy -Lf work +disable_message+C00380+C00381 +disable_message+C00388+C00389
+uname(Linux icpc 5.4.0-216-generic #236-Ubuntu SMP Fri Apr 11 19:53:21 UTC 2025 x86_64)
+[INFO] error/warning message 'C00388' has been suppressed.
+[INFO] error/warning message 'C00389' has been suppressed.
+au time 0.165619 0.093834 0.029235 delta 88080384 88080384 total 261521408 261521408

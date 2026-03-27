@@ -1,7 +1,7 @@
 `ifndef PIX_XY_FEATURE_SRAM_INTEGRATED_TOP_SV
 `define PIX_XY_FEATURE_SRAM_INTEGRATED_TOP_SV
 
-`include "./src/AMOLED/tile feature_extracter/pix_xy_feature_top.sv"
+`include "./src/AMOLED/tile_feature_extracter/pix_xy_feature_top.sv"
 `include "./src/AMOLED/feature_sram/feature_sram.sv"
 
 `timescale 1ns/1ps

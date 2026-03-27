@@ -15,8 +15,8 @@
     parameter int unsigned TOTAL_WORDS_P    = tile_x * tile_y * WORDS_PER_FEAT_P,
     parameter int unsigned MEM_AW           = (TOTAL_WORDS_P <= 1) ? 1 : $clog2(TOTAL_WORDS_P)
  )(
-    input clk,
-    input rst,
+    input logic clk,
+    input logic rst,
     //feature write request
     input logic valid_wr,
     output logic ready_wr,

@@ -1,0 +1,307 @@
+0 
+43
++define+FSDB
++incdir+/home/stanley/stanley/TPU_FP32_PIPELINE/src
++itf+/export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/vcsdp_lite.tab
++vcsd1
++vpi
+-Mamsrun=
+-Masflags=
+-Mcc=gcc
+-Mcfl= -pipe -fPIC -O -I/export/SoftWare/Synopsys/vcs/T-2022.06/include
+-Mcplusplus=g++
+-Mcrt0=
+-Mcrtn=
+-Mcsrc=
+-Mexternalobj=
+-Mldflags=-L/usr/lib/x86_64-linux-gnu -L/lib/x86_64-linux-gnu -Wl,--no-as-needed -rdynamic
+-Mobjects= /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/libvirsim.so /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/liberrorinf.so /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/libsnpsmalloc.so /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/libvfs.so
+-Mout=/home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv
+-Msaverestoreobj=/export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/vcs_save_restore_new.o
+-Msyslibs=/export/SoftWare/Synopsys/verdi/T-2022.06/share/PLI/VCS/LINUX64/pli.a -ldl
+-Mvcsaceobjs=
+-Mxcflags= -pipe -fPIC -I/export/SoftWare/Synopsys/vcs/T-2022.06/include
+-Mxllcflags=
+-P
+-Xopt_file=/tmp/vcs_20260326132221_2942382/_vcs_optFile_tmp_0128632413.f
+-Xufe=2steps
+-debug_access+all
+-fsdb
+-full64
+-gen_obj
+-kdb
+-l
+-lca
+-o /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv
+-picarchive
+-sverilog
+-timescale=1ns/1ps
+-top
+/export/SoftWare/Synopsys/vcs/T-2022.06/linux64/bin/vcs1
+/home/stanley/stanley/TPU_FP32_PIPELINE/build/log/rtl_compile.log
+tb_video_feature_sram_nb_attn_m5_top_fp32
+/home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv
+/export/SoftWare/Synopsys/verdi/T-2022.06/share/PLI/VCS/LINUX64/verdi.tab
+/home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv
+147
+ossSimUserSiDir=/export/SoftWare/Keysight/ADS2022/idf/ads_site/si
+ossSimUserHnlDir=/export/SoftWare/Keysight/ADS2022/idf/ads_site/hnl
+XPEDION_CADENCE_VERSION=618-64b
+XPEDION=/export/SoftWare/Keysight/GoldenGate-2022
+XDG_SESSION_TYPE=tty
+XDG_SESSION_ID=3412
+XDG_SESSION_CLASS=user
+XDG_RUNTIME_DIR=/run/user/1002
+XDG_DATA_DIRS=/usr/local/share:/usr/share:/var/lib/snapd/desktop
+XCELIUMMAIN_HOME=/export/SoftWare/Cadence/XCELIUMMAIN23.09.003
+XA_HOME=/export/SoftWare/Synopsys/xa/T-2022.06
+WV_HOME=/export/SoftWare/Synopsys/wv/T-2022.06
+W3264_NO_HOST_CHECK=1
+VMR_MODE_FLAG=64
+VMANAGERHOME=/export/SoftWare/Cadence/VMANAGERMAIN22.09.002
+VERDI_HOME=/export/SoftWare/Synopsys/verdi/T-2022.06
+VC_STATIC_HOME=/export/SoftWare/Synopsys/vc_static/T-2022.06
+VCS_TARGET_ARCH=linux64
+VCS_PATHMAP_PRELOAD_DONE=1
+VCS_MX_HOME_INTERNAL=1
+VCS_MODE_FLAG=64
+VCS_LOG_FILE=/home/stanley/stanley/TPU_FP32_PIPELINE/build/log/rtl_compile.log
+VCS_LCAMSG_PRINT_OFF=1
+VCS_HOME=/export/SoftWare/Synopsys/vcs/T-2022.06
+VCS_EXEC_DONE=1
+VCS_DEPTH=0
+VCS_ARG_ADDED_FOR_TMP=1
+VCS_ARCH_OVERRIDE=ubuntu
+VCS_ARCH=linux64
+USE_DW=0
+UNAME=/bin/uname
+TXS_HOME=/export/SoftWare/Synopsys/txs/S-2021.06-SP5-5
+TWEAKER_HOME=/export/SoftWare/Synopsys/tweaker/S-2021.06-SP5
+TOOL_HOME=/export/SoftWare/Synopsys/vcs/T-2022.06/linux64
+TESSENT_PATH=/export/SoftWare/Mentor/Tessent_2021.4
+SYN_HOME=/export/SoftWare/Synopsys/syn/U-2022.12
+SYNOPSYS_LC_ROOT=/export/SoftWare/Synopsys/lc/T-2022.03
+STRATUS_HOME=/export/SoftWare/Cadence/STRATUS22.01.005
+STAR_RCXT_HOME=/export/SoftWare/Synopsys/starrc/T-2022.03-SP5-3
+SSV_HOME=/export/SoftWare/Cadence/SSV22.11.000
+SSH_TTY=/dev/pts/0
+SSH_CONNECTION=192.168.169.1 51827 192.168.169.128 22
+SSH_CLIENT=192.168.169.1 51827 22
+SPYGLASS_HOME=/export/SoftWare/Synopsys/spyglass/T-2022.06-1/SPYGLASS_HOME
+SPECTRE_HOME=/export/SoftWare/Cadence/SPECTRE23.10.242
+SPECTRE_DEFAULTS=-E
+SNP_DIR=/export/SoftWare/Synopsys
+SNPS_VERDI_INTERNAL_LP_XML_NEW_FLOW=1
+SNPS_VCS_CLANG_PATH=/export/SoftWare/Synopsys/vcs/T-2022.06/linux64/clang
+SNPS_INTERNAL_VCS_LINUX_OS=linux
+SILICONSMART_HOME=/export/SoftWare/Synopsys/siliconsmart/T-2022.03
+SENTAURUS_HOME=/export/SoftWare/Synopsys/sentaurus/2022.12/sentaurus/U-2022.12
+SCRNAME=vcs
+SCRIPT_NAME=vcs
+RedHawk_HOME=/export/SoftWare/Ansys/RedHawk_Linux64e7_V2022R2.6
+RedHawkSC_HOME=/export/SoftWare/Ansys/Redhawk_SC2022
+QUANTUS_HOME=/export/SoftWare/Cadence/QUANTUS22.10.000
+PVS_HOME=/export/SoftWare/Cadence/PVS22.20.000
+PRIMEWAVE_HOME=/export/SoftWare/Synopsys/primewave/T-2022.06-SP2
+PRIMETIME_HOME=/export/SoftWare/Synopsys/pts/T-2022.03-SP5
+PRIMESIM_HOME=/export/SoftWare/Synopsys/primesim/S-2021.09
+PEGASUS_HOME=/export/SoftWare/Cadence/PEGASUS22.12.000
+OVA_UUM=0
+OA_HOME=/export/SoftWare/Cadence/IC06.18.340/oa_v22.60.091
+MW_HOME=/export/SoftWare/Synopsys/mw/S-2021.06-SP5-5
+MVS_HOME=/export/SoftWare/Cadence/MVS21.12.000
+MOTD_SHOWN=pam
+MODUS_HOME=/export/SoftWare/Cadence/MODUS22.10.000
+MODELSIM_HOME=/export/SoftWare/Mentor/ModelSimDE_2023.4/modelsim_dlx
+MGLS_LICENSE_FILE=/export/SoftWare/Mentor/license/license.dat
+MGC_LIB_PATH=/export/SoftWare/Mentor/Calibre_2023.2_16.9/aoi_cal_2023.2_16.9/lib
+MGC_HOME=/export/SoftWare/Mentor/Calibre_2023.2_16.9/aoi_cal_2023.2_16.9
+MGC_CALIBRE_REALTIME_VIRTUOSO_ENABLED=1
+MFLAGS=
+MENTOR_HOME=/export/SoftWare/Mentor
+MDV_XLM_HOME=/export/SoftWare/Cadence/XCELIUMMAIN23.09.003
+MAKE_TERMOUT=/dev/pts/0
+MAKE_TERMERR=/dev/pts/0
+MAKEOVERRIDES=${-*-command-variables-*-}
+MAKELEVEL=1
+MAKEFLAGS= -- USE_DW=0
+LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
+LIBERATE_HOME=/export/SoftWare/Cadence/LIBERATE21.80.043
+LESSOPEN=| /usr/bin/lesspipe %s
+LESSCLOSE=/usr/bin/lesspipe %s %s
+LC_TIME=zh_CN.UTF-8
+LC_TELEPHONE=zh_CN.UTF-8
+LC_PAPER=zh_CN.UTF-8
+LC_NUMERIC=zh_CN.UTF-8
+LC_NAME=zh_CN.UTF-8
+LC_MONETARY=zh_CN.UTF-8
+LC_MEASUREMENT=zh_CN.UTF-8
+LC_IDENTIFICATION=zh_CN.UTF-8
+LC_ALL=C
+LC_ADDRESS=zh_CN.UTF-8
+KYT_HOME=/export/SoftWare/Keysight
+JLS_HOME=/export/SoftWare/Cadence/JLS21.14.000
+JASPER_OS_CHECK=0
+JASPERGOLD_HOME=/export/SoftWare/Cadence/JASPERGOLD23.03.000
+INTEGRAND_HOME=/export/SoftWare/Cadence/INTEGRAND63.10.000
+INNOVUS_HOME=/export/SoftWare/Cadence/INNOVUS21.17.000
+INDAGO_ROOT=/export/SoftWare/Cadence/INDAGOMAIN22.09.001
+ICVW_HOME_DIR=/export/SoftWare/Synopsys/icv_workbench/S-2021.06-SP2
+ICC_HOME=/export/SoftWare/Synopsys/icc/O-2018.06-SP1
+ICC2_HOME=/export/SoftWare/Synopsys/icc2/T-2022.03-SP5
+HSPICE_HOME=/export/SoftWare/Synopsys/hspice/T-2022.06-1
+HPEESOF_DIR=/export/SoftWare/Keysight/ADS2022
+GOLDENGATE_LICENSE_FILE=/export/SoftWare/Keysight/license/license.lic
+GENUS_HOME=/export/SoftWare/Cadence/GENUS21.17.000
+FUSIONCOMPILER_HOME=/export/SoftWare/Synopsys/fusioncompiler/T-2022.03-SP3
+FPGA_HOME=/export/SoftWare/Synopsys/fpga/T-2022.09-SP1
+FORMALITY_HOME=/export/SoftWare/Synopsys/fm/U-2022.12-SP1
+FINESIM_HOME=/export/SoftWare/Synopsys/finesim/T-2022.06
+EMX_path=/export/SoftWare/Cadence/INTEGRAND63.10.000/bin
+EMX_modelgen_path=/export/SoftWare/Cadence/INTEGRAND63.10.000/bin
+EMX_INTERFACE_PATH=/export/SoftWare/Cadence/INTEGRAND63.10.000/cadence6/emxinterface
+EMPRO_LICENSE_FILE=/export/SoftWare/Keysight/license/license.lic
+EMPROHOME=/export/SoftWare/Keysight/ADS2022/fem/2022.00/linux_x86_64/bin
+EMBEDIT_HOME=/export/SoftWare/Synopsys/embedit/U-2022.12-SP1
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1002/bus
+CUSTOMCOMPILER_HOME=/export/SoftWare/Synopsys/customcompiler/T-2022.06-SP2
+CPATH=/usr/include/x86_64-linux-gnu
+CORETOOL_HOME=/export/SoftWare/Synopsys/coretools/S-2021.09-SP4-1
+CONFRML_HOME=/export/SoftWare/Cadence/CONFRML23.10.200
+CDS_SPECTRE_FBENABLE=1
+CDS_SPECTRERF_FBENABLE=1
+CDS_ROOT=/export/SoftWare/Cadence/IC06.18.340
+CDS_Netlisting_Mode=Analog
+CDS_LOAD_ENV=CSF
+CDS_LIC_ONLY=1
+CDS_LIC_FILE=/export/SoftWare/Cadence/license/license.dat
+CDS_INST_DIR=/export/SoftWare/Cadence/IC06.18.340
+CDS_HOME=/export/SoftWare/Cadence/IC06.18.340
+CDS_ENABLE_VMS=1
+CDS_AUTO_64BIT=ALL
+CDSROOT=/export/SoftWare/Cadence/IC06.18.340
+CDSHOME=/export/SoftWare/Cadence/IC06.18.340
+CDSDIR=/export/SoftWare/Cadence/IC06.18.340
+CDS=/export/SoftWare/Cadence/IC06.18.340
+CALIBRE_HOME=/export/SoftWare/Mentor/Calibre_2023.2_16.9/aoi_cal_2023.2_16.9
+CALIBRE_ENABLE_SKILL_PEXBA_MODE=1
+CADHOME=/export/SoftWare/Cadence
+CADENCE_DIR=/export/SoftWare/Cadence/IC06.18.340
+AYS_HOME=/export/SoftWare/Ansys
+ASSURAHOME=/export/SoftWare/Cadence/ASSURA04.16.113
+ANSYSLMD_LICENSE_FILE=1055@icpc
+ADS_LICENSE_FILE=/export/SoftWare/Keysight/license/license.lic
+0
+0
+104
+1774519750 ./src/AMOLED/video_feature_sram_nb_attn_m5_top_fp32.sv
+1774406687 ./src/AMOLED/pix_xy_feature_sram_integrated_top.sv
+1774404287 ./src/AMOLED/video_rgb2y_integrated_top.sv
+1774404287 ./src/AMOLED/rgb2y_luma/rgb2y_luma_top.sv
+1774404287 ./src/AMOLED/video_in_timing_if/video_in_timing_if_top.sv
+1774404287 ./src/AMOLED/video_in_timing_if/frame_event_gen.sv
+1774519310 ./src/AMOLED/video_in_timing_if/xy_counter.sv
+1774404287 ./src/AMOLED/video_in_timing_if/active_window_tracker.sv
+1774404287 ./src/AMOLED/video_in_timing_if/sync_edge_top.sv
+1774404287 ./src/AMOLED/video_in_timing_if/edge_pulse_gen.sv
+1774404287 ./src/AMOLED/video_in_timing_if/sync_sanitizer.sv
+1774404287 ./src/AMOLED/tile_neighborhood_fetch/nb_feat_bundle_assembler_9.sv
+1774404287 ./src/AMOLED/tile_neighborhood_fetch/feature_sram_burst_reader.sv
+1774404287 ./src/AMOLED/tile_neighborhood_fetch/feature_sram_rd_addr_encode.sv
+1774404287 ./src/AMOLED/tile_neighborhood_fetch/nb_fetch_scheduler_9req.sv
+1774404287 ./src/AMOLED/tile_neighborhood_fetch/tile_coord_clamp_3x3.sv
+1774404287 ./src/AMOLED/tile_neighborhood_fetch/tile_nb_fetch_3x3_to_9req_inst.sv
+1774404287 ./src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_top_inst.sv
+1774404287 ./src/AMOLED/rgb2y_luma/rgb_unpack_clip.sv
+1774410768 ./src/AMOLED/rgb2y_luma/rgb2y_out_pack.sv
+1774404287 ./src/AMOLED/rgb2y_luma/rgb2y_full_pipe_top.sv
+1774404287 ./src/AMOLED/rgb2y_luma/rgb_sum_acc.sv
+1774404287 ./src/AMOLED/rgb2y_luma/rgb_round_shift.sv
+1774404287 ./src/AMOLED/rgb2y_luma/rgb_y_pipe_top.sv
+1774404287 ./src/AMOLED/rgb2y_luma/rgb_coeff_mult.sv
+1774404287 ./src/AMOLED/feature_sram/feature_sram.sv
+1774404287 ./src/AMOLED/tile_feature_extracter/feature_pack_and_valid.sv
+1774404287 ./src/AMOLED/tile_feature_extracter/tile_stats_edge_raster_4x4.sv
+1774404287 ./src/AMOLED/tile_feature_extracter/linebuf_y_1line.sv
+1774404287 ./src/AMOLED/tile_feature_extracter/pixel_xy_counter.sv
+1774408030 ./src/AMOLED/tile_feature_extracter/pixel_xy_linebuf_1line_top.sv
+1774407951 ./src/AMOLED/tile_feature_extracter/pix_xy_linebuf_stats_edge_top.sv
+1774518663 ./src/AMOLED/tile_feature_extracter/pix_xy_feature_top.sv
+1774404287 ./src/AMOLED/feature_sram/sram_phy_wrap.sv
+1774404287 ./src/AMOLED/feature_sram/feat_sram_burst_top.sv
+1774404287 ./src/AMOLED/feature_sram/burst_req_if_tileaddr_wrap.sv
+1774404287 ./src/AMOLED/feature_sram/tile_feat_sram_burst_system.sv
+1774404287 ./src/AMOLED/feature_sram/rd_assemble_fifo.sv
+1774404287 ./src/AMOLED/feature_sram/burst_engine.sv
+1774518450 ./src/AMOLED/feature_sram/burst_req_if.sv
+1774404287 ./src/AMOLED/feature_sram/tile_addr_gen.sv
+1774489206 ./src/AMOLED/atten_core/attn_m3_m4_top.sv
+1774489935 ./src/AMOLED/atten_core/attn_norm_relu_fp32.sv
+1774436059 ./src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv
+1774528876 ./src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/test/tb_video_feature_sram_nb_attn_m5_top_fp32.sv
+1774410512 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_rgb2y_to_feature_sram_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_rgb2y_integrated_top.sv
+1774519310 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/xy_counter.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_xy_top_sync.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_xy_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/video_in_timing_if_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/sync_sanitizer.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/sync_edge_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/frame_event_gen.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/edge_pulse_gen.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_in_timing_if/active_window_tracker.sv
+1774519750 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/video_feature_sram_nb_attn_m5_top_fp32.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_nb_fetch_3x3_to_9req_inst.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_top_inst.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_nb_feature_fetch_3x3_bundle9_top_inst.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/tile_coord_clamp_3x3.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/nb_fetch_scheduler_9req.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/nb_feat_bundle_assembler_9.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/feature_sram_rd_addr_encode.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_neighborhood_fetch/feature_sram_burst_reader.sv
+1774519077 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_nb_fetch_bundle9_attn_core_m5_top_fp32.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/tile_stats_edge_raster_4x4.sv
+1774408030 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/pixel_xy_linebuf_1line_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/pixel_xy_counter.sv
+1774407951 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/pix_xy_linebuf_stats_edge_top.sv
+1774518663 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/pix_xy_feature_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/linebuf_y_1line.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/tile_feature_extracter/feature_pack_and_valid.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_y_pipe_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_unpack_coeff_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_unpack_clip.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_sum_acc.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_round_shift.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb_coeff_mult.sv
+1774410768 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_out_pack.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_luma_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/rgb2y_luma/rgb2y_full_pipe_top.sv
+1774406687 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/pix_xy_feature_sram_integrated_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/tile_feat_sram_burst_system.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/tile_addr_gen.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/sram_phy_wrap.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/rd_assemble_fifo.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/feature_sram.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/feat_sram_burst_top.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/burst_req_if_tileaddr_wrap.sv
+1774518450 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/burst_req_if.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/feature_sram/burst_engine.sv
+1774517969 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_weighted_sum_fp32.sv
+1774436059 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_score_9xD_fp32_pipe.sv
+1774489935 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_norm_relu_fp32.sv
+1774489206 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m3_m4_top.sv
+1774528876 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m4_chain_top_pipe.sv
+1774404287 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_m1_m2_chain_top.sv
+1774528173 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_core_tile_top_fp32.sv
+1774435259 /home/stanley/stanley/TPU_FP32_PIPELINE/src/AMOLED/atten_core/attn_alpha_fp32.sv
+1774531342 /tmp/vcs_20260326132221_2942382/_vcs_optFile_tmp_0128632413.f
+1653825972 /export/SoftWare/Synopsys/verdi/T-2022.06/share/PLI/VCS/LINUX64/verdi.tab
+1654052745 /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/vcsdp_lite.tab
+4
+1654054205 /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/libvirsim.so
+1654053585 /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/liberrorinf.so
+1654053489 /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/libsnpsmalloc.so
+1654053565 /export/SoftWare/Synopsys/vcs/T-2022.06/linux64/lib/libvfs.so
+1774531345 /home/stanley/stanley/TPU_FP32_PIPELINE/build/run/simv.daidir
+-1 partitionlib
